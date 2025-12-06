@@ -53,9 +53,9 @@ coverage/
 
 # Backups (contain database dumps)
 backups/
-*.sql
 *.sql.gz
 *.sql.gpg
+# Note: platform/libs/sql/*.sql migration files ARE tracked (not ignored)
 
 # PgBouncer runtime data
 infrastructure/pgbouncer/*.backup*
