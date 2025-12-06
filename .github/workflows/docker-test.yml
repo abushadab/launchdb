@@ -41,7 +41,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: false
-          tags: launchdb/${{ matrix.name }}:test
+          tags: abushadaf/launchdb-${{ matrix.name }}:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

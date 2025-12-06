@@ -21,19 +21,19 @@ jobs:
     strategy:
       matrix:
         include:
-          - image: launchdb/platform-api
+          - image: abushadaf/launchdb-platform-api
             context: ./platform
             dockerfile: ./platform/Dockerfile
-          - image: launchdb/pgbouncer
+          - image: abushadaf/launchdb-pgbouncer
             context: ./infrastructure/pgbouncer
             dockerfile: ./infrastructure/pgbouncer/Dockerfile
-          - image: launchdb/postgrest
+          - image: abushadaf/launchdb-postgrest
             context: ./infrastructure/postgrest
             dockerfile: ./infrastructure/postgrest/Dockerfile
-          - image: launchdb/postgrest-manager
+          - image: abushadaf/launchdb-postgrest-manager
             context: ./infrastructure/postgrest-manager
             dockerfile: ./infrastructure/postgrest-manager/Dockerfile
-          - image: launchdb/backup
+          - image: abushadaf/launchdb-backup
             context: ./infrastructure/backup
             dockerfile: ./infrastructure/backup/Dockerfile
 
