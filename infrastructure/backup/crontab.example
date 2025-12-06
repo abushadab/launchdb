@@ -1,0 +1,24 @@
+# LaunchDB Backup Crontab Example
+#
+# Add these entries to your crontab to schedule automated backups
+# Edit with: crontab -e
+#
+# NOTE: For Docker environments, these should be run from the host
+# using docker exec commands (see below)
+
+# Database backups - Daily at 2:00 AM
+0 2 * * * docker exec launchdb-backup /backup.sh --all
+
+# Storage backups - Daily at 3:00 AM
+0 3 * * * docker exec launchdb-backup /storage-backup.sh
+
+# Alternative: Run from within backup container
+# If running inside the container, use:
+# 0 2 * * * /backup.sh --all
+# 0 3 * * * /storage-backup.sh
+
+# Weekly full backup with explicit all flag - Sundays at 1:00 AM
+0 1 * * 0 docker exec launchdb-backup /backup.sh --all
+
+# Backup logs cleanup - Monthly on the 1st at 4:00 AM
+0 4 1 * * find /var/lib/docker/volumes/launchdb_backup-data/_data -name "*.log" -mtime +30 -delete

@@ -1,0 +1,8 @@
+# PgBouncer User Authentication
+# Format: "username" "password_hash"
+# Generate MD5: echo -n "passwordusername" | md5sum | cut -d" " -f1
+# Example: "myuser" "md5abc123..."
+#
+# This file will be populated automatically when projects are created.
+# DO NOT commit production passwords to version control\!
+

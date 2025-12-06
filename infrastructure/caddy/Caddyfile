@@ -1,0 +1,179 @@
+{
+    # Global options
+    admin 0.0.0.0:2019
+
+    # Automatic HTTPS
+    email {$ACME_EMAIL}
+
+    # Logging
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}
+
+# Main domain configuration
+{$DOMAIN} {
+    # Request ID for tracing
+    header {
+        X-Request-ID {http.request.uuid}
+        defer
+    }
+
+    # Security headers
+    header {
+        # Security
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+
+        # Remove server info
+        -Server
+        -X-Powered-By
+    }
+
+    # Logging with request details
+    log {
+        output stdout
+        format json {
+            time_format "iso8601"
+        }
+    }
+
+    # ============================================================
+    # Platform API Routes
+    # ============================================================
+
+    handle /api/* {
+        # Target rate limit: 100 req/min per IP
+        # Implement via application middleware or Caddy rate-limit plugin
+
+        reverse_proxy platform-api:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+        }
+    }
+
+    # ============================================================
+    # Auth Service Routes (per-project)
+    # ============================================================
+
+    handle /auth/* {
+        # Target rate limit: 20 req/min per IP (brute force protection)
+        # Additional: 10 req/min per IP+project_id
+        # Implement via application middleware or Caddy rate-limit plugin
+
+        reverse_proxy auth-service:8001 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Request-ID {http.request.uuid}
+
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+        }
+    }
+
+    # ============================================================
+    # PostgREST Routes (per-project database access)
+    # ============================================================
+
+    handle /db/* {
+        # Target rate limit: 60 req/min per IP
+        # Additional: 30 req/min per IP+project_id
+        # Implement via application middleware or Caddy rate-limit plugin
+
+        # IMPORTANT: Per-project PostgREST routing
+        # Each project has its own PostgREST container: postgrest-{projectId}
+        # Platform-api should handle routing internally OR
+        # Use Caddy API to dynamically add upstreams when projects are created
+        #
+        # For v1: Route to platform-api which proxies to correct PostgREST container
+        # Platform-api extracts {projectId} from path and forwards to postgrest-{projectId}:3000
+
+        reverse_proxy platform-api:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Request-ID {http.request.uuid}
+            header_up X-PostgREST-Route "true"
+
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+        }
+    }
+
+    # ============================================================
+    # Storage Service Routes (per-project)
+    # ============================================================
+
+    handle /storage/* {
+        # Target rate limit: 50 req/min per IP
+        # Additional: 25 req/min per IP+project_id
+        # Implement via application middleware or Caddy rate-limit plugin
+
+        # Increase timeout for file uploads
+        reverse_proxy storage-service:8003 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Request-ID {http.request.uuid}
+
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+
+            # Upload timeout settings
+            flush_interval -1
+            transport http {
+                read_timeout 300s
+                write_timeout 300s
+            }
+        }
+    }
+
+    # ============================================================
+    # Default Route (placeholder for future dashboard)
+    # ============================================================
+
+    handle /* {
+        respond "LaunchDB v0.1.0 - API running. Dashboard coming in v0.2.0.
+
+Available endpoints:
+- POST /api/projects - Create project
+- GET  /api/projects - List projects
+- POST /auth/{project_id}/signup - User signup
+- POST /storage/{project_id}/* - File upload
+- GET  /db/{project_id}/* - Database REST API
+
+Documentation: https://github.com/launchdb/launchdb" 200
+    }
+
+    # Error pages
+    handle_errors {
+        @ratelimit expression {http.error.status_code} == 429
+        respond @ratelimit "Rate limit exceeded. Please try again later." 429
+
+        @5xx expression {http.error.status_code} >= 500
+        respond @5xx "Service temporarily unavailable" {http.error.status_code}
+
+        respond "Not found" 404
+    }
+}
+
+# Health check endpoint (non-TLS)
+:2019 {
+    handle /metrics {
+        metrics
+    }
+}

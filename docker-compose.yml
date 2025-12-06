@@ -1,0 +1,338 @@
+version: '3.8'
+
+networks:
+  launchdb-internal:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  pgbouncer-logs:
+  storage-data:
+  backup-data:
+  caddy-data:
+  caddy-config:
+  # PostgREST configs are per-project, managed by spawn script
+
+services:
+  # ============================================================
+  # Database Layer
+  # ============================================================
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: launchdb-postgres
+    restart: unless-stopped
+    networks:
+      - launchdb-internal
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: platform
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+      POSTGRES_HOST_AUTH_METHOD: md5
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres} -d platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=500"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "log_statement=mod"
+      - "-c"
+      - "log_min_duration_statement=1000"
+      - "-c"
+      - "password_encryption=md5"
+
+  # ============================================================
+  # Connection Pooling
+  # ============================================================
+
+  pgbouncer:
+    build:
+      context: ./infrastructure/pgbouncer
+      dockerfile: Dockerfile
+    image: launchdb/pgbouncer:v1
+    container_name: launchdb-pgbouncer
+    restart: unless-stopped
+    networks:
+      - launchdb-internal
+    volumes:
+      - ./infrastructure/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
+      - ./infrastructure/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt
+      - pgbouncer-logs:/var/log/pgbouncer
+    ports:
+      - "127.0.0.1:6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 6432 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================
+  # Platform Services (Control Plane)
+  # ============================================================
+
+  platform-api:
+    build:
+      context: ./platform
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: platform-api
+    container_name: launchdb-platform-api
+    restart: unless-stopped
+    networks:
+      - launchdb-internal
+    ports:
+      - "8000:8000"
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      PLATFORM_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@pgbouncer:6432/platform
+      ADMIN_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@pgbouncer:6432/platform
+      LAUNCHDB_MASTER_KEY: ${LAUNCHDB_MASTER_KEY}
+      JWT_SECRET: ${PLATFORM_JWT_SECRET}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      POSTGREST_ADMIN_KEY: ${POSTGREST_ADMIN_KEY}
+      MIGRATIONS_RUNNER_URL: http://migrations:8002
+      LOG_LEVEL: info
+    volumes:
+      - ./infrastructure/platform-api/config:/app/config:ro
+      - ./infrastructure/postgrest/projects:/etc/postgrest/projects
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+
+  auth-service:
+    build:
+      context: ./platform
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: auth-service
+    container_name: launchdb-auth-service
+    restart: unless-stopped
+    networks:
+      - launchdb-internal
+    environment:
+      NODE_ENV: production
+      PORT: 8001
+      PLATFORM_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@pgbouncer:6432/platform
+      LAUNCHDB_MASTER_KEY: ${LAUNCHDB_MASTER_KEY}
+      CACHE_TTL_SECONDS: 300
+      ACCESS_TOKEN_TTL: 900
+      REFRESH_TOKEN_TTL: 604800
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM:-noreply@launchdb.local}
+      LOG_LEVEL: info
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # NOTE: PostgREST instances are spawned per-project dynamically
+  # See scripts/postgrest-spawn.sh for per-project container management
+  # Each project gets its own postgrest-{projectId} container
+
+  storage-service:
+    build:
+      context: ./platform
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: storage-service
+    container_name: launchdb-storage-service
+    restart: unless-stopped
+    networks:
+      - launchdb-internal
+    environment:
+      NODE_ENV: production
+      PORT: 8003
+      PLATFORM_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@pgbouncer:6432/platform
+      LAUNCHDB_MASTER_KEY: ${LAUNCHDB_MASTER_KEY}
+      STORAGE_PATH: /var/lib/launchdb/storage
+      MAX_FILE_SIZE_MB: 50
+      SIGNED_URL_TTL: 3600
+      LOG_LEVEL: info
+    volumes:
+      - storage-data:/var/lib/launchdb/storage
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8003/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  migrations:
+    build:
+      context: ./platform
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: migrations-runner
+    container_name: launchdb-migrations
+    restart: unless-stopped
+    networks:
+      - launchdb-internal
+    environment:
+      NODE_ENV: production
+      PORT: 8002
+      PLATFORM_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@pgbouncer:6432/platform
+      ADMIN_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@postgres:5432/platform
+      LAUNCHDB_MASTER_KEY: ${LAUNCHDB_MASTER_KEY}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      LOG_LEVEL: info
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8002/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  postgrest-manager:
+    build: ./infrastructure/postgrest-manager
+    image: launchdb/postgrest-manager:latest
+    container_name: launchdb-postgrest-manager
+    restart: unless-stopped
+    networks:
+      - launchdb-internal
+    ports:
+      - "9000:9000"
+    environment:
+      PORT: 9000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      # Host paths for Docker daemon (absolute paths required)
+      # IMPORTANT: These MUST be set in .env file - no defaults for portability
+      # Point to absolute paths on Docker host where files are located
+      HOST_SCRIPT_DIR: ${HOST_SCRIPT_DIR}
+      HOST_CONFIG_DIR: ${HOST_CONFIG_DIR}
+      # Domain for OpenAPI spec (optional, passed to PostgREST containers)
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infrastructure/scripts:/scripts:ro
+      - ./infrastructure/postgrest/projects:/etc/postgrest/projects:ro
+    depends_on:
+      - postgres
+      - pgbouncer
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:9000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ============================================================
+  # Reverse Proxy & TLS
+  # ============================================================
+
+  reverse-proxy:
+    image: caddy:2.7-alpine
+    container_name: launchdb-caddy
+    restart: unless-stopped
+    networks:
+      - launchdb-internal
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    depends_on:
+      - platform-api
+      - auth-service
+      - storage-service
+      # PostgREST instances are spawned per-project, not a dependency
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:2019/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================================
+  # Custom PostgREST Image Build
+  # ============================================================
+  # Note: This service builds the custom PostgREST image used by per-project containers
+  # The image is not run directly; instead it's spawned per-project by postgrest-manager
+  # Build command: docker-compose build postgrest-image
+
+  postgrest-image:
+    build: ./infrastructure/postgrest
+    image: launchdb/postgrest:v1
+    container_name: launchdb-postgrest-image-builder
+    restart: "no"
+    command: ["echo", "PostgREST image built. Use postgrest-manager to spawn per-project containers."]
+    profiles:
+      - build-only
+
+  # ============================================================
+  # Backup Service
+  # ============================================================
+
+  backup:
+    build: ./infrastructure/backup
+    image: launchdb/backup:latest
+    container_name: launchdb-backup
+    restart: "no"
+    networks:
+      - launchdb-internal
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY}
+      RSYNC_DEST: ${RSYNC_DEST}
+      RSYNC_SSH_KEY_PATH: /root/.ssh/backup_key
+    volumes:
+      - backup-data:/backups
+      - storage-data:/storage:ro
+      - ./infrastructure/backup/backup.sh:/backup.sh:ro
+      - ./infrastructure/backup/restore.sh:/restore.sh:ro
+      - ./infrastructure/backup/ssh:/root/.ssh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh"]
+    command: ["-c", "echo 'Backup container ready. Run: docker exec launchdb-backup /backup.sh'"]

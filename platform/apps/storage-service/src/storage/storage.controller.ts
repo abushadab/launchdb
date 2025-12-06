@@ -1,0 +1,130 @@
+/**
+ * Storage Controller
+ * Path-based routing per interfaces.md §6
+ * Routes: /storage/:projectId/:bucket/*
+ */
+
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+  StreamableFile,
+  HttpCode,
+  HttpStatus,
+  Res,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
+import { Readable } from 'stream';
+import { StorageService } from './storage.service';
+import { UploadQueryDto, UploadResponseDto } from './dto/upload.dto';
+import { CreateSignedUrlDto, SignedUrlResponseDto, DeleteResponseDto } from './dto/signed-url.dto';
+
+@Controller('storage/:projectId')
+export class StorageController {
+  constructor(private storageService: StorageService) {}
+
+  /**
+   * POST /storage/:projectId/:bucket/*
+   * Upload file
+   */
+  @Post(':bucket/*')
+  @UseInterceptors(FileInterceptor('file'))
+  @HttpCode(HttpStatus.CREATED)
+  async upload(
+    @Param('projectId') projectId: string,
+    @Param('bucket') bucket: string,
+    @Param('0') path: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Query() query: UploadQueryDto,
+  ): Promise<UploadResponseDto> {
+    const bucketName = query.bucket || bucket || 'default';
+    const stream = Readable.from(file.buffer);
+
+    return this.storageService.uploadFile(
+      projectId,
+      bucketName,
+      path || file.originalname,
+      stream,
+      file.mimetype,
+    );
+  }
+
+  /**
+   * GET /storage/:projectId/:bucket/*
+   * Download file (with optional signed URL token)
+   */
+  @Get(':bucket/*')
+  async download(
+    @Param('projectId') projectId: string,
+    @Param('bucket') bucket: string,
+    @Param('0') path: string,
+    @Query('token') token: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    let result;
+
+    if (token) {
+      // Download with signed URL
+      result = await this.storageService.downloadWithSignedUrl(
+        projectId,
+        bucket,
+        path,
+        token,
+      );
+    } else {
+      // Regular download
+      result = await this.storageService.downloadFile(projectId, bucket, path);
+    }
+
+    res.set({
+      'Content-Type': result.contentType,
+      'Content-Length': result.size,
+      'Content-Disposition': `inline; filename="${path.split('/').pop()}"`,
+    });
+
+    return new StreamableFile(result.stream);
+  }
+
+  /**
+   * DELETE /storage/:projectId/:bucket/*
+   * Delete file
+   */
+  @Delete(':bucket/*')
+  @HttpCode(HttpStatus.OK)
+  async delete(
+    @Param('projectId') projectId: string,
+    @Param('bucket') bucket: string,
+    @Param('0') path: string,
+  ): Promise<DeleteResponseDto> {
+    await this.storageService.deleteFile(projectId, bucket, path);
+    return { message: 'File deleted successfully' };
+  }
+
+  /**
+   * POST /storage/:projectId/sign
+   * Create signed URL
+   */
+  @Post('sign')
+  @HttpCode(HttpStatus.OK)
+  async createSignedUrl(
+    @Param('projectId') projectId: string,
+    @Body() dto: CreateSignedUrlDto,
+  ): Promise<SignedUrlResponseDto> {
+    const bucket = dto.bucket || 'default';
+    const expiresIn = dto.expires_in || 300; // Default 5 minutes
+
+    return this.storageService.createSignedUrl(
+      projectId,
+      bucket,
+      dto.path,
+      expiresIn,
+    );
+  }
+}

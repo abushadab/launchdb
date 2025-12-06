@@ -1,0 +1,192 @@
+/**
+ * Signed URL Service
+ * Generate and validate time-limited signed URLs
+ * Per interfaces.md §6
+ */
+
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { TokenHashService, CryptoService } from '@launchdb/common/crypto';
+import { DatabaseService } from '@launchdb/common/database';
+import { Pool } from 'pg';
+
+export interface SignedUrlParams {
+  projectId: string;
+  bucket: string;
+  path: string;
+  expiresIn: number; // seconds
+}
+
+export interface SignedUrlValidation {
+  projectId: string;
+  bucket: string;
+  path: string;
+  valid: boolean;
+}
+
+@Injectable()
+export class SignedUrlService {
+  private readonly logger = new Logger(SignedUrlService.name);
+  private readonly projectPools = new Map<string, Pool>();
+
+  constructor(
+    private configService: ConfigService,
+    private tokenHashService: TokenHashService,
+    private cryptoService: CryptoService,
+    private databaseService: DatabaseService,
+  ) {}
+
+  /**
+   * Generate signed URL
+   */
+  async generateSignedUrl(params: SignedUrlParams): Promise<string> {
+    const { projectId, bucket, path: filePath, expiresIn } = params;
+
+    // Generate random token
+    const token = this.tokenHashService.generateToken();
+    const tokenHash = this.tokenHashService.hash(token);
+
+    // Calculate expiry
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    // Store token in database
+    const pool = await this.getProjectPool(projectId);
+    await pool.query(
+      `INSERT INTO storage.signed_urls (token_hash, bucket, path, expires_at, created_at)
+       VALUES ($1, $2, $3, $4, now())`,
+      [tokenHash, bucket, filePath, expiresAt],
+    );
+
+    // Build signed URL
+    const baseUrl = this.configService.get<string>('baseUrl');
+    const signedUrl = `${baseUrl}/storage/${projectId}/${bucket}/${filePath}?token=${token}`;
+
+    this.logger.debug(
+      `Generated signed URL for ${projectId}/${bucket}/${filePath}, expires at ${expiresAt.toISOString()}`,
+    );
+
+    return signedUrl;
+  }
+
+  /**
+   * Validate signed URL token
+   */
+  async validateSignedUrl(
+    projectId: string,
+    bucket: string,
+    path: string,
+    token: string,
+  ): Promise<SignedUrlValidation> {
+    const tokenHash = this.tokenHashService.hash(token);
+
+    try {
+      const pool = await this.getProjectPool(projectId);
+
+      const result = await pool.query(
+        `SELECT id, bucket, path, expires_at, used
+         FROM storage.signed_urls
+         WHERE token_hash = $1
+           AND bucket = $2
+           AND path = $3
+           AND expires_at > now()
+           AND used = false
+         FOR UPDATE`,
+        [tokenHash, bucket, path],
+      );
+
+      if (result.rows.length === 0) {
+        this.logger.warn(
+          `Invalid or expired signed URL token for ${projectId}/${bucket}/${path}`,
+        );
+        return { projectId, bucket, path, valid: false };
+      }
+
+      // Mark token as used (one-time use)
+      await pool.query(
+        `UPDATE storage.signed_urls
+         SET used = true, used_at = now()
+         WHERE id = $1`,
+        [result.rows[0].id],
+      );
+
+      return { projectId, bucket, path, valid: true };
+    } catch (error) {
+      this.logger.error(
+        `Failed to validate signed URL for ${projectId}: ${error.message}`,
+      );
+      return { projectId, bucket, path, valid: false };
+    }
+  }
+
+  /**
+   * Cleanup expired signed URLs (periodic maintenance)
+   */
+  async cleanupExpiredUrls(projectId: string): Promise<number> {
+    const pool = await this.getProjectPool(projectId);
+
+    const result = await pool.query(
+      `DELETE FROM storage.signed_urls
+       WHERE expires_at < now() - interval '1 day'
+       RETURNING id`,
+    );
+
+    const deletedCount = result.rowCount;
+    this.logger.log(
+      `Cleaned up ${deletedCount} expired signed URLs for project ${projectId}`,
+    );
+
+    return deletedCount;
+  }
+
+  /**
+   * Get or create pool for project database
+   */
+  private async getProjectPool(projectId: string): Promise<Pool> {
+    if (!this.projectPools.has(projectId)) {
+      // Get project database info from platform
+      const project = await this.databaseService.queryOne(
+        'SELECT db_name, status FROM platform.projects WHERE id = $1',
+        [projectId],
+      );
+
+      if (!project || project.status !== 'active') {
+        throw new UnauthorizedException('Project not active');
+      }
+
+      // Get db_password from secrets
+      const secret = await this.databaseService.queryOne(
+        `SELECT encrypted_value FROM platform.secrets
+         WHERE project_id = $1 AND secret_type = 'db_password'`,
+        [projectId],
+      );
+
+      if (!secret) {
+        throw new UnauthorizedException('Project configuration unavailable');
+      }
+
+      // Decrypt db_password (secret.encrypted_value is already a Buffer)
+      const dbPassword = this.cryptoService.decrypt(secret.encrypted_value);
+
+      const host = this.configService.get<string>('projectsDbHost');
+      const port = this.configService.get<number>('projectsDbPort');
+      const authenticatorRole = `${projectId}_authenticator`;
+
+      // URL-encode password to handle special characters (+/=) from base64
+      const encodedPassword = encodeURIComponent(dbPassword);
+      const dsn = `postgresql://${authenticatorRole}:${encodedPassword}@${host}:${port}/${project.db_name}`;
+
+      this.projectPools.set(
+        projectId,
+        new Pool({
+          connectionString: dsn,
+          min: 2,
+          max: 10,
+        }),
+      );
+
+      this.logger.log(`Created connection pool for project ${projectId}`);
+    }
+
+    return this.projectPools.get(projectId)!;
+  }
+}
