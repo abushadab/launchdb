@@ -61,10 +61,10 @@ services:
   # ============================================================
 
   pgbouncer:
-    build:
-      context: ./infrastructure/pgbouncer
-      dockerfile: Dockerfile
-    image: launchdb/pgbouncer:v1
+    image: abushadaf/launchdb-pgbouncer:latest
+    # build:
+    #   context: ./infrastructure/pgbouncer
+    #   dockerfile: Dockerfile
     container_name: launchdb-pgbouncer
     restart: unless-stopped
     networks:
@@ -90,11 +90,12 @@ services:
   # ============================================================
 
   platform-api:
-    build:
-      context: ./platform
-      dockerfile: Dockerfile
-      args:
-        SERVICE_NAME: platform-api
+    image: abushadaf/launchdb-platform-api:latest
+    # build:
+    #   context: ./platform
+    #   dockerfile: Dockerfile
+    #   args:
+    #     SERVICE_NAME: platform-api
     container_name: launchdb-platform-api
     restart: unless-stopped
     networks:
@@ -127,11 +128,12 @@ services:
 
 
   auth-service:
-    build:
-      context: ./platform
-      dockerfile: Dockerfile
-      args:
-        SERVICE_NAME: auth-service
+    image: abushadaf/launchdb-auth-service:latest
+    # build:
+    #   context: ./platform
+    #   dockerfile: Dockerfile
+    #   args:
+    #     SERVICE_NAME: auth-service
     container_name: launchdb-auth-service
     restart: unless-stopped
     networks:
@@ -165,11 +167,12 @@ services:
   # Each project gets its own postgrest-{projectId} container
 
   storage-service:
-    build:
-      context: ./platform
-      dockerfile: Dockerfile
-      args:
-        SERVICE_NAME: storage-service
+    image: abushadaf/launchdb-storage-service:latest
+    # build:
+    #   context: ./platform
+    #   dockerfile: Dockerfile
+    #   args:
+    #     SERVICE_NAME: storage-service
     container_name: launchdb-storage-service
     restart: unless-stopped
     networks:
@@ -196,11 +199,12 @@ services:
       start_period: 40s
 
   migrations:
-    build:
-      context: ./platform
-      dockerfile: Dockerfile
-      args:
-        SERVICE_NAME: migrations-runner
+    image: abushadaf/launchdb-migrations-runner:latest
+    # build:
+    #   context: ./platform
+    #   dockerfile: Dockerfile
+    #   args:
+    #     SERVICE_NAME: migrations-runner
     container_name: launchdb-migrations
     restart: unless-stopped
     networks:
@@ -224,8 +228,8 @@ services:
       start_period: 40s
 
   postgrest-manager:
-    build: ./infrastructure/postgrest-manager
-    image: launchdb/postgrest-manager:latest
+    image: abushadaf/launchdb-postgrest-manager:latest
+    # build: ./infrastructure/postgrest-manager
     container_name: launchdb-postgrest-manager
     restart: unless-stopped
     networks:
@@ -297,8 +301,8 @@ services:
   # Build command: docker-compose build postgrest-image
 
   postgrest-image:
-    build: ./infrastructure/postgrest
-    image: launchdb/postgrest:v1
+    image: abushadaf/launchdb-postgrest:latest
+    # build: ./infrastructure/postgrest
     container_name: launchdb-postgrest-image-builder
     restart: "no"
     command: ["echo", "PostgREST image built. Use postgrest-manager to spawn per-project containers."]
@@ -310,8 +314,8 @@ services:
   # ============================================================
 
   backup:
-    build: ./infrastructure/backup
-    image: launchdb/backup:latest
+    image: abushadaf/launchdb-backup:latest
+    # build: ./infrastructure/backup
     container_name: launchdb-backup
     restart: "no"
     networks:
