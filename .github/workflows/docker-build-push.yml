@@ -21,21 +21,40 @@ jobs:
     strategy:
       matrix:
         include:
+          # Platform services (require SERVICE_NAME build arg)
           - image: abushadaf/launchdb-platform-api
             context: ./platform
             dockerfile: ./platform/Dockerfile
+            build-args: SERVICE_NAME=platform-api
+          - image: abushadaf/launchdb-auth-service
+            context: ./platform
+            dockerfile: ./platform/Dockerfile
+            build-args: SERVICE_NAME=auth-service
+          - image: abushadaf/launchdb-storage-service
+            context: ./platform
+            dockerfile: ./platform/Dockerfile
+            build-args: SERVICE_NAME=storage-service
+          - image: abushadaf/launchdb-migrations-runner
+            context: ./platform
+            dockerfile: ./platform/Dockerfile
+            build-args: SERVICE_NAME=migrations-runner
+          # Infrastructure services
           - image: abushadaf/launchdb-pgbouncer
             context: ./infrastructure/pgbouncer
             dockerfile: ./infrastructure/pgbouncer/Dockerfile
+            build-args: ""
           - image: abushadaf/launchdb-postgrest
             context: ./infrastructure/postgrest
             dockerfile: ./infrastructure/postgrest/Dockerfile
+            build-args: ""
           - image: abushadaf/launchdb-postgrest-manager
             context: ./infrastructure/postgrest-manager
             dockerfile: ./infrastructure/postgrest-manager/Dockerfile
+            build-args: ""
           - image: abushadaf/launchdb-backup
             context: ./infrastructure/backup
             dockerfile: ./infrastructure/backup/Dockerfile
+            build-args: ""
 
     steps:
       - name: Checkout repository
@@ -70,6 +89,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.build-args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64

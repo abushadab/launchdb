@@ -12,21 +12,40 @@ jobs:
     strategy:
       matrix:
         include:
+          # Platform services
           - name: platform-api
             context: ./platform
             dockerfile: ./platform/Dockerfile
+            build-args: SERVICE_NAME=platform-api
+          - name: auth-service
+            context: ./platform
+            dockerfile: ./platform/Dockerfile
+            build-args: SERVICE_NAME=auth-service
+          - name: storage-service
+            context: ./platform
+            dockerfile: ./platform/Dockerfile
+            build-args: SERVICE_NAME=storage-service
+          - name: migrations-runner
+            context: ./platform
+            dockerfile: ./platform/Dockerfile
+            build-args: SERVICE_NAME=migrations-runner
+          # Infrastructure services
           - name: pgbouncer
             context: ./infrastructure/pgbouncer
             dockerfile: ./infrastructure/pgbouncer/Dockerfile
+            build-args: ""
           - name: postgrest
             context: ./infrastructure/postgrest
             dockerfile: ./infrastructure/postgrest/Dockerfile
+            build-args: ""
           - name: postgrest-manager
             context: ./infrastructure/postgrest-manager
             dockerfile: ./infrastructure/postgrest-manager/Dockerfile
+            build-args: ""
           - name: backup
             context: ./infrastructure/backup
             dockerfile: ./infrastructure/backup/Dockerfile
+            build-args: ""
 
     steps:
       - name: Checkout repository
@@ -42,6 +61,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: false
           tags: abushadaf/launchdb-${{ matrix.name }}:test
+          build-args: ${{ matrix.build-args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
