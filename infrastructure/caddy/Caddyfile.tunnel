@@ -14,7 +14,7 @@
 }
 
 # Main domain configuration (HTTP only - tunnel handles TLS)
-{$DOMAIN} {
+:80 {
     # Request ID for tracing
     header {
         X-Request-ID {http.request.uuid}
