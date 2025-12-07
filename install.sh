@@ -405,7 +405,7 @@ log_success "Created $INSTALL_DIR"
 log_section "Downloading LaunchDB"
 
 LAUNCHDB_VERSION="${LAUNCHDB_VERSION:-v0.1.0}"
-GITHUB_REPO="${GITHUB_REPO:-abushadaf/launchdb}"
+GITHUB_REPO="${GITHUB_REPO:-abushadab/launchdb}"
 LAUNCHDB_SHA256="${LAUNCHDB_SHA256:-}"
 
 log_info "Downloading LaunchDB ${LAUNCHDB_VERSION} from ${GITHUB_REPO}..."
@@ -575,31 +575,62 @@ if [ "$USE_CLOUDFLARE_TUNNEL" = true ]; then
     chmod 700 "$CF_DIR"
     log_success "Created secure credentials directory: $CF_DIR"
 
-    log_info "To set up Cloudflare Tunnel:"
+    # Step 1: Cloudflare login
+    log_info "Opening browser for Cloudflare login..."
+    if ! docker run --rm -it -v "${CF_DIR}:/etc/cloudflared" \
+        cloudflare/cloudflared:2024.10.0 tunnel login; then
+        log_error "Cloudflare login failed"
+        exit 1
+    fi
+
+    log_success "Cloudflare login successful"
+
+    # Step 2: Create tunnel
+    log_info "Creating tunnel..."
+    TUNNEL_NAME="launchdb-$(openssl rand -hex 4)"
+    TUNNEL_OUTPUT=$(docker run --rm -v "${CF_DIR}:/etc/cloudflared" \
+        cloudflare/cloudflared:2024.10.0 tunnel create "$TUNNEL_NAME" 2>&1)
+
+    TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oP '[a-f0-9-]{36}' | head -1)
+
+    if [ -z "$TUNNEL_ID" ]; then
+        log_error "Failed to create tunnel"
+        echo "$TUNNEL_OUTPUT"
+        exit 1
+    fi
+
+    log_success "Tunnel created: $TUNNEL_ID"
+
+    # Step 3: Get tunnel token
+    log_info "Getting tunnel token..."
+    TUNNEL_TOKEN=$(docker run --rm -v "${CF_DIR}:/etc/cloudflared" \
+        cloudflare/cloudflared:2024.10.0 tunnel token "$TUNNEL_ID" 2>&1)
+
+    if [ -z "$TUNNEL_TOKEN" ]; then
+        log_error "Failed to get tunnel token"
+        exit 1
+    fi
+
+    # Step 4: Update .env with token
+    sed -i "s/CLOUDFLARE_TUNNEL_TOKEN=.*/CLOUDFLARE_TUNNEL_TOKEN=${TUNNEL_TOKEN}/" "$ENV_FILE"
+    log_success "Tunnel token added to .env"
+
+    # Step 5: Show CNAME instructions
     echo ""
-    echo "1. Login to Cloudflare (browser will open):"
-    echo "   docker run --rm -v ${CF_DIR}:/etc/cloudflared cloudflare/cloudflared:2024.10.0 tunnel login"
-    echo ""
-    echo "2. Create tunnel:"
-    echo "   docker run --rm -v ${CF_DIR}:/etc/cloudflared cloudflare/cloudflared:2024.10.0 tunnel create launchdb"
-    echo ""
-    echo "3. Configure tunnel route in Cloudflare dashboard:"
-    echo "   Tunnel: launchdb"
-    echo "   Public hostname: ${DOMAIN}"
-    echo "   Service: http://reverse-proxy:80"
-    echo "   (Connects via internal Docker network - no public ports needed)"
-    echo ""
-    echo "4. Get tunnel token and update .env:"
-    echo "   docker run --rm -v ${CF_DIR}:/etc/cloudflared cloudflare/cloudflared:2024.10.0 tunnel token <TUNNEL_ID>"
-    echo "   Edit: $ENV_FILE and replace CLOUDFLARE_TUNNEL_TOKEN value"
-    echo ""
-    echo "5. Start LaunchDB with tunnel mode:"
-    echo "   cd $INSTALL_DIR"
-    echo "   docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml --profile cloudflare up -d"
+    log_info "Add this CNAME record in your Cloudflare dashboard:"
+    echo "  Name:   ${DOMAIN%%.*} (or your subdomain)"
+    echo "  Target: ${TUNNEL_ID}.cfargotunnel.com"
+    echo "  Points to: ${DOMAIN}"
     echo ""
 
-    log_success "Tunnel mode configured - zero host ports, ACME disabled"
-    log_info "Cloudflared will connect to Caddy via internal network"
+    read -p "Press Enter when CNAME is added..."
+
+    # Step 6: Start services
+    log_info "Starting LaunchDB with Cloudflare Tunnel..."
+    cd "$INSTALL_DIR"
+    docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml --profile cloudflare up -d
+
+    log_success "LaunchDB started with Cloudflare Tunnel!"
     log_info "Access LaunchDB at: https://${DOMAIN}"
 
     exit 0
