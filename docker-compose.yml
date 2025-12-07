@@ -106,6 +106,7 @@ services:
       ADMIN_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@pgbouncer:6432/platform
       LAUNCHDB_MASTER_KEY: ${LAUNCHDB_MASTER_KEY}
       JWT_SECRET: ${PLATFORM_JWT_SECRET}
+      platformJwtSecret: ${PLATFORM_JWT_SECRET}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       POSTGREST_ADMIN_KEY: ${POSTGREST_ADMIN_KEY}
       MIGRATIONS_RUNNER_URL: http://migrations:8002
@@ -150,6 +151,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       SMTP_FROM: ${SMTP_FROM:-noreply@launchdb.local}
       LOG_LEVEL: info
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
     depends_on:
       pgbouncer:
         condition: service_healthy
@@ -184,6 +186,7 @@ services:
       MAX_FILE_SIZE_MB: 50
       SIGNED_URL_TTL: 3600
       LOG_LEVEL: info
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
     volumes:
       - storage-data:/var/lib/launchdb/storage
     depends_on:
