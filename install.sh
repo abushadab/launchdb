@@ -76,6 +76,11 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Redirect stdin from terminal (needed for curl | bash)
+if [ ! -t 0 ]; then
+    exec < /dev/tty
+fi
+
 log_section "LaunchDB Installer"
 log_info "Installing LaunchDB - The Open Source BaaS Platform"
 echo ""
