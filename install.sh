@@ -612,7 +612,8 @@ if [ "$USE_CLOUDFLARE_TUNNEL" = true ]; then
     fi
 
     # Step 4: Update .env with token
-    sed -i "s/CLOUDFLARE_TUNNEL_TOKEN=.*/CLOUDFLARE_TUNNEL_TOKEN=${TUNNEL_TOKEN}/" "$ENV_FILE"
+    # Use | as delimiter since token may contain /
+    sed -i "s|CLOUDFLARE_TUNNEL_TOKEN=.*|CLOUDFLARE_TUNNEL_TOKEN=${TUNNEL_TOKEN}|" "$ENV_FILE"
     log_success "Tunnel token added to .env"
 
     # Step 5: Show CNAME instructions
