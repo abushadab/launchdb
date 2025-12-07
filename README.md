@@ -12,41 +12,28 @@ A self-hosted, VPS-first Backend-as-a-Service platform that provides instant Pos
 
 ## Quick Start
 
-### Prerequisites
-
-- Docker 20.10+
-- Docker Compose 2.0+
-- 4-8 GB RAM, 2-4 vCPU minimum
-- Domain with DNS pointing to your server
-
-### Installation
+### One-Command Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/launchdb.git
-cd launchdb
-
-# Copy environment template
-cp .env.example .env
-
-# Generate secrets
-export LAUNCHDB_MASTER_KEY=$(openssl rand -base64 32)
-export PLATFORM_JWT_SECRET=$(openssl rand -base64 32)
-export POSTGRES_SUPERUSER_PASSWORD=$(openssl rand -base64 24)
-
-# Update .env with generated values and your domain
-nano .env
-
-# Update HOST_SCRIPT_DIR and HOST_CONFIG_DIR to your actual paths
-# Example: HOST_SCRIPT_DIR=/path/to/launchdb/infrastructure/scripts
-
-# Start all services
-docker-compose up -d
-
-# Verify deployment
-docker-compose ps
-curl https://your-domain.com/api/health
+curl -fsSL https://launchdb.io/install.sh | sudo bash
 ```
+
+The installer will:
+- Install Docker if needed
+- Auto-generate all secrets
+- Handle port conflicts (offers alternate ports or Cloudflare Tunnel)
+- Configure TLS with Let's Encrypt
+- Start all services
+
+**Access LaunchDB:** `https://your-domain.com`
+
+For advanced installation options, manual setup, or port configuration, see the [detailed installation guide](docs/infrastructure/setup.md).
+
+### Prerequisites
+
+- Ubuntu 20.04+ or Debian 11+
+- 4-8 GB RAM, 2-4 vCPU minimum
+- Domain with DNS pointing to your server (optional with Cloudflare Tunnel)
 
 ## Architecture
 

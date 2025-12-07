@@ -1,0 +1,155 @@
+{
+    # Global options
+    admin 0.0.0.0:2019
+
+    # Disable automatic HTTPS (cloudflared handles TLS)
+    auto_https off
+
+    # Logging
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}
+
+# Main domain configuration (HTTP only - tunnel handles TLS)
+{$DOMAIN} {
+    # Request ID for tracing
+    header {
+        X-Request-ID {http.request.uuid}
+        defer
+    }
+
+    # Security headers
+    header {
+        # Security
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+
+        # Remove server info
+        -Server
+        -X-Powered-By
+    }
+
+    # Logging with request details
+    log {
+        output stdout
+        format json {
+            time_format "iso8601"
+        }
+    }
+
+    # ============================================================
+    # Platform API Routes
+    # ============================================================
+
+    handle /api/* {
+        reverse_proxy platform-api:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto https
+            header_up X-Request-ID {http.request.uuid}
+
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+        }
+    }
+
+    # ============================================================
+    # Auth Service Routes (per-project)
+    # ============================================================
+
+    handle /auth/* {
+        reverse_proxy auth-service:8001 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto https
+            header_up X-Request-ID {http.request.uuid}
+
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+        }
+    }
+
+    # ============================================================
+    # PostgREST Routes (per-project database access)
+    # ============================================================
+
+    handle /db/* {
+        reverse_proxy platform-api:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto https
+            header_up X-Request-ID {http.request.uuid}
+            header_up X-PostgREST-Route "true"
+
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+        }
+    }
+
+    # ============================================================
+    # Storage Service Routes (per-project)
+    # ============================================================
+
+    handle /storage/* {
+        reverse_proxy storage-service:8003 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto https
+            header_up X-Request-ID {http.request.uuid}
+
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+
+            # Upload timeout settings
+            flush_interval -1
+            transport http {
+                read_timeout 300s
+                write_timeout 300s
+            }
+        }
+    }
+
+    # ============================================================
+    # Default Route (placeholder for future dashboard)
+    # ============================================================
+
+    handle /* {
+        respond "LaunchDB v0.1.0 - API running. Dashboard coming in v0.2.0.
+
+Available endpoints:
+- POST /api/projects - Create project
+- GET  /api/projects - List projects
+- POST /auth/{project_id}/signup - User signup
+- POST /storage/{project_id}/* - File upload
+- GET  /db/{project_id}/* - Database REST API
+
+Documentation: https://github.com/launchdb/launchdb" 200
+    }
+
+    # Error pages
+    handle_errors {
+        @ratelimit expression {http.error.status_code} == 429
+        respond @ratelimit "Rate limit exceeded. Please try again later." 429
+
+        @5xx expression {http.error.status_code} >= 500
+        respond @5xx "Service temporarily unavailable" {http.error.status_code}
+
+        respond "Not found" 404
+    }
+}
+
+# Health check endpoint (non-TLS)
+:2019 {
+    handle /metrics {
+        metrics
+    }
+}

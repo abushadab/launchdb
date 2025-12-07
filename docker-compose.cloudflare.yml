@@ -1,0 +1,18 @@
+# Docker Compose override for Cloudflare Tunnel mode
+# Usage: docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml --profile cloudflare up -d
+#
+# This override:
+# - Removes port bindings from Caddy (tunnel handles external traffic)
+# - Uses tunnel-specific Caddyfile (ACME disabled)
+# - Cloudflared connects to reverse-proxy:80 via internal network
+
+version: '3.8'
+
+services:
+  # Remove port bindings from reverse-proxy (tunnel mode)
+  reverse-proxy:
+    ports: []  # No host port bindings - cloudflared handles external traffic
+    volumes:
+      - ./infrastructure/caddy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro  # Use tunnel config (no ACME)
+      - caddy-data:/data
+      - caddy-config:/config
