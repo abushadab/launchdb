@@ -1,19 +1,10 @@
 #!/bin/bash
 #
 # LaunchDB One-Click Installer
-# Usage: curl -fsSL https://launchdb.io/install.sh | sudo bash
+# Usage: sudo bash <(curl -fsSL https://launchdb.io/install.sh)
 #
 
 set -e
-
-# Handle curl | bash by re-executing from temp file
-if [ ! -t 0 ] && [ -z "$LAUNCHDB_REEXEC" ]; then
-    TEMP_SCRIPT=$(mktemp)
-    cat > "$TEMP_SCRIPT"
-    chmod +x "$TEMP_SCRIPT"
-    export LAUNCHDB_REEXEC=1
-    exec bash "$TEMP_SCRIPT" "$@"
-fi
 
 # Colors for output
 RED='\033[0;31m'
