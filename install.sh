@@ -6,6 +6,15 @@
 
 set -e
 
+# Handle curl | bash by re-executing from temp file
+if [ ! -t 0 ] && [ -z "$LAUNCHDB_REEXEC" ]; then
+    TEMP_SCRIPT=$(mktemp)
+    cat > "$TEMP_SCRIPT"
+    chmod +x "$TEMP_SCRIPT"
+    export LAUNCHDB_REEXEC=1
+    exec bash "$TEMP_SCRIPT" "$@"
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -74,11 +83,6 @@ validate_cors_origin() {
 if [ "$EUID" -ne 0 ]; then
     log_error "This script must be run as root (use sudo)"
     exit 1
-fi
-
-# Redirect stdin from terminal (needed for curl | bash)
-if [ ! -t 0 ]; then
-    exec < /dev/tty
 fi
 
 log_section "LaunchDB Installer"
@@ -237,7 +241,7 @@ if [ -n "$PORT_80_USED" ] || [ -n "$PORT_443_USED" ]; then
     echo "  3) Exit and free up ports manually"
     echo ""
 
-    read -p "Enter choice [1-3]: " CHOICE < /dev/tty
+    read -p "Enter choice [1-3]: " CHOICE
 
     case $CHOICE in
         1)
@@ -273,7 +277,7 @@ echo "  Note: '*' allows all origins (insecure for production)"
 echo ""
 
 while true; do
-    read -p "CORS_ORIGIN: " CORS_INPUT < /dev/tty
+    read -p "CORS_ORIGIN: " CORS_INPUT
 
     if [ -z "$CORS_INPUT" ]; then
         CORS_ORIGIN="*"
@@ -321,7 +325,7 @@ if [ "$USE_CLOUDFLARE_TUNNEL" = true ]; then
     echo "Note: You'll create a CNAME record pointing this domain to your tunnel"
 
     while true; do
-        read -p "Domain: " DOMAIN_INPUT < /dev/tty
+        read -p "Domain: " DOMAIN_INPUT
 
         if [ -z "$DOMAIN_INPUT" ]; then
             log_error "Domain is required for Cloudflare Tunnel"
@@ -342,7 +346,7 @@ else
     echo "Enter your domain name (e.g., api.yourdomain.com):"
 
     while true; do
-        read -p "Domain: " DOMAIN_INPUT < /dev/tty
+        read -p "Domain: " DOMAIN_INPUT
 
         if [ -z "$DOMAIN_INPUT" ]; then
             log_error "Domain is required"
@@ -360,7 +364,7 @@ else
     echo "Enter email for Let's Encrypt notifications:"
 
     while true; do
-        read -p "Email: " EMAIL_INPUT < /dev/tty
+        read -p "Email: " EMAIL_INPUT
 
         if [ -z "$EMAIL_INPUT" ]; then
             log_error "Email is required"
@@ -387,7 +391,7 @@ log_section "Creating Installation Directory"
 
 if [ -d "$INSTALL_DIR" ]; then
     log_warn "Directory $INSTALL_DIR already exists"
-    read -p "Overwrite? [y/N]: " OVERWRITE < /dev/tty
+    read -p "Overwrite? [y/N]: " OVERWRITE
 
     if [ "$OVERWRITE" != "y" ] && [ "$OVERWRITE" != "Y" ]; then
         log_error "Installation cancelled"
@@ -628,7 +632,7 @@ if [ "$USE_CLOUDFLARE_TUNNEL" = true ]; then
     echo "  Points to: ${DOMAIN}"
     echo ""
 
-    read -p "Press Enter when CNAME is added..." < /dev/tty
+    read -p "Press Enter when CNAME is added..."
 
     # Step 6: Start services
     log_info "Starting LaunchDB with Cloudflare Tunnel..."
