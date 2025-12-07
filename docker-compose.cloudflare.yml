@@ -11,7 +11,7 @@ version: '3.8'
 services:
   # Remove port bindings from reverse-proxy (tunnel mode)
   reverse-proxy:
-    ports: []  # No host port bindings - cloudflared handles external traffic
+    ports: !reset []  # Clear all port bindings - cloudflared handles external traffic
     volumes:
       - ./infrastructure/caddy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro  # Use tunnel config (no ACME)
       - caddy-data:/data
