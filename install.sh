@@ -578,7 +578,7 @@ if [ "$USE_CLOUDFLARE_TUNNEL" = true ]; then
     # Step 1: Cloudflare login
     log_info "Opening browser for Cloudflare login..."
     if ! docker run --rm -it --user root -v "${CF_DIR}:/root/.cloudflared" \
-        cloudflare/cloudflared:2024.10.0 tunnel login; then
+        cloudflare/cloudflared:2025.11.1 tunnel login; then
         log_error "Cloudflare login failed"
         exit 1
     fi
@@ -589,7 +589,7 @@ if [ "$USE_CLOUDFLARE_TUNNEL" = true ]; then
     log_info "Creating tunnel..."
     TUNNEL_NAME="launchdb-$(openssl rand -hex 4)"
     TUNNEL_OUTPUT=$(docker run --rm --user root -v "${CF_DIR}:/root/.cloudflared" \
-        cloudflare/cloudflared:2024.10.0 tunnel create "$TUNNEL_NAME" 2>&1)
+        cloudflare/cloudflared:2025.11.1 tunnel create "$TUNNEL_NAME" 2>&1)
 
     TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oP '[a-f0-9-]{36}' | head -1)
 
@@ -604,7 +604,7 @@ if [ "$USE_CLOUDFLARE_TUNNEL" = true ]; then
     # Step 3: Get tunnel token
     log_info "Getting tunnel token..."
     TUNNEL_TOKEN=$(docker run --rm --user root -v "${CF_DIR}:/root/.cloudflared" \
-        cloudflare/cloudflared:2024.10.0 tunnel token "$TUNNEL_ID" 2>&1)
+        cloudflare/cloudflared:2025.11.1 tunnel token "$TUNNEL_ID" 2>&1)
 
     if [ -z "$TUNNEL_TOKEN" ]; then
         log_error "Failed to get tunnel token"

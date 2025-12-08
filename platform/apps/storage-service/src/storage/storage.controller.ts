@@ -18,6 +18,7 @@ import {
   HttpCode,
   HttpStatus,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
@@ -44,6 +45,9 @@ export class StorageController {
     @UploadedFile() file: Express.Multer.File,
     @Query() query: UploadQueryDto,
   ): Promise<UploadResponseDto> {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
     const bucketName = query.bucket || bucket || 'default';
     const stream = Readable.from(file.buffer);
 
@@ -83,10 +87,14 @@ export class StorageController {
       result = await this.storageService.downloadFile(projectId, bucket, path);
     }
 
+    // Sanitize filename for Content-Disposition header
+    const filename = path.split('/').pop() || 'download';
+    const sanitizedFilename = filename.replace(/["\r\n]/g, '_');
+
     res.set({
       'Content-Type': result.contentType,
       'Content-Length': result.size,
-      'Content-Disposition': `inline; filename="${path.split('/').pop()}"`,
+      'Content-Disposition': `inline; filename="${sanitizedFilename}"`,
     });
 
     return new StreamableFile(result.stream);

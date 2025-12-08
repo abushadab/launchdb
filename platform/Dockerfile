@@ -6,7 +6,7 @@ ARG SERVICE_NAME
 # ============================================================
 # Builder Stage
 # ============================================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine3.23 AS builder
 
 WORKDIR /app
 
@@ -32,7 +32,7 @@ RUN npx nest build ${SERVICE_NAME}
 # ============================================================
 # Production Stage
 # ============================================================
-FROM node:20-alpine
+FROM node:22-alpine3.23
 
 WORKDIR /app
 

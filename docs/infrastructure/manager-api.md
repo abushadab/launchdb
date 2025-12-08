@@ -515,14 +515,46 @@ await execAsync(`/scripts/pgbouncer-add-project.sh ${projectId}`);
 
 ### Docker Socket Access
 
-Manager API has read-only access to Docker socket:
+Manager API has Docker socket access with read-only file mount:
 
 ```yaml
 volumes:
   - /var/run/docker.sock:/var/run/docker.sock:ro
 ```
 
-**Implication:** Manager API can inspect and control Docker containers but cannot modify Docker daemon configuration.
+**What `:ro` means:**
+- The socket **file** is mounted read-only (cannot replace/delete the socket file itself)
+- The Manager API can still **send API commands** to the Docker daemon through the socket
+- This allows container control operations: spawn, restart, stop, delete containers
+- This does NOT prevent modifying Docker daemon configuration or accessing other containers
+
+**Security Implications:**
+- ⚠️ **Full Docker access = root-equivalent privileges**: Any process with Docker socket access can escape to the host
+- The `:ro` flag provides minimal security benefit (only prevents socket file manipulation)
+- For production: Use a Docker socket proxy (e.g., [Tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy)) to restrict API endpoints
+
+**Recommended production setup:**
+```yaml
+# docker-compose.yml - restrict socket access
+services:
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy
+    environment:
+      CONTAINERS: 1  # Allow container operations
+      POST: 1        # Allow create/start
+      DELETE: 1      # Allow delete/stop
+      IMAGES: 0      # Deny image operations
+      NETWORKS: 1    # Allow network access
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - launchdb-internal
+
+  postgrest-manager:
+    # Point to proxy instead of direct socket
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
+```
 
 ### Network Isolation
 

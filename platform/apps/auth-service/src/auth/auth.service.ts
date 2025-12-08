@@ -154,67 +154,81 @@ export class AuthService {
     const config = await this.projectConfigService.getProjectConfig(projectId);
     const pool = this.getProjectPool(projectId, config);
 
-    // Hash refresh token for lookup
-    const tokenHash = this.tokenHashService.hash(dto.refresh_token);
+    // Wrap token rotation in transaction to prevent race conditions
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    // Get refresh token
-    const result = await pool.query(
-      `SELECT rt.id, rt.user_id, rt.expires_at, s.id as session_id
-       FROM auth.refresh_tokens rt
-       JOIN auth.sessions s ON s.id = rt.session_id
-       WHERE rt.token_hash = $1
-         AND rt.revoked = false
-         AND rt.expires_at > now()`,
-      [tokenHash],
-    );
+      // Hash refresh token for lookup
+      const tokenHash = this.tokenHashService.hash(dto.refresh_token);
 
-    if (result.rows.length === 0) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
+      // Get and lock refresh token to prevent concurrent reuse (TOCTOU protection)
+      const result = await client.query(
+        `SELECT rt.id, rt.user_id, rt.expires_at, s.id as session_id
+         FROM auth.refresh_tokens rt
+         JOIN auth.sessions s ON s.id = rt.session_id
+         WHERE rt.token_hash = $1
+           AND rt.revoked = false
+           AND rt.expires_at > now()
+         FOR UPDATE OF rt`,
+        [tokenHash],
+      );
+
+      if (result.rows.length === 0) {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
+
+      const tokenData = result.rows[0];
+
+      // Generate new tokens
+      const accessToken = this.jwtService.createAccessToken(
+        tokenData.user_id,
+        projectId,
+        JwtRole.AUTHENTICATED,
+        config.jwtSecret,
+        this.ACCESS_TOKEN_TTL,
+      );
+
+      const newRefreshToken = this.generateRefreshToken();
+      const newTokenHash = this.tokenHashService.hash(newRefreshToken);
+
+      // Revoke old refresh token
+      await client.query(
+        `UPDATE auth.refresh_tokens
+         SET revoked = true, updated_at = now()
+         WHERE id = $1`,
+        [tokenData.id],
+      );
+
+      // Create new refresh token
+      const expiresAt = new Date(Date.now() + this.REFRESH_TOKEN_TTL * 1000);
+      await client.query(
+        `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, now(), now())`,
+        [tokenData.session_id, tokenData.user_id, newTokenHash, expiresAt],
+      );
+
+      // Update session last_active
+      await client.query(
+        `UPDATE auth.sessions
+         SET last_active = now()
+         WHERE id = $1`,
+        [tokenData.session_id],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        access_token: accessToken,
+        refresh_token: newRefreshToken,
+        expires_in: this.ACCESS_TOKEN_TTL,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const tokenData = result.rows[0];
-
-    // Generate new tokens
-    const accessToken = this.jwtService.createAccessToken(
-      tokenData.user_id,
-      projectId,
-      JwtRole.AUTHENTICATED,
-      config.jwtSecret,
-      this.ACCESS_TOKEN_TTL,
-    );
-
-    const newRefreshToken = this.generateRefreshToken();
-    const newTokenHash = this.tokenHashService.hash(newRefreshToken);
-
-    // Revoke old refresh token
-    await pool.query(
-      `UPDATE auth.refresh_tokens
-       SET revoked = true, updated_at = now()
-       WHERE id = $1`,
-      [tokenData.id],
-    );
-
-    // Create new refresh token
-    const expiresAt = new Date(Date.now() + this.REFRESH_TOKEN_TTL * 1000);
-    await pool.query(
-      `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, now(), now())`,
-      [tokenData.session_id, tokenData.user_id, newTokenHash, expiresAt],
-    );
-
-    // Update session last_active
-    await pool.query(
-      `UPDATE auth.sessions
-       SET last_active = now()
-       WHERE id = $1`,
-      [tokenData.session_id],
-    );
-
-    return {
-      access_token: accessToken,
-      refresh_token: newRefreshToken,
-      expires_in: this.ACCESS_TOKEN_TTL,
-    };
   }
 
   /**

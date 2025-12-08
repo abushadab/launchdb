@@ -59,6 +59,9 @@ export class SignedUrlService {
 
     // Build signed URL
     const baseUrl = this.configService.get<string>('baseUrl');
+    if (!baseUrl) {
+      throw new Error('baseUrl configuration is required for signed URLs');
+    }
     const signedUrl = `${baseUrl}/storage/${projectId}/${bucket}/${filePath}?token=${token}`;
 
     this.logger.debug(
@@ -81,35 +84,47 @@ export class SignedUrlService {
 
     try {
       const pool = await this.getProjectPool(projectId);
+      const client = await pool.connect();
 
-      const result = await pool.query(
-        `SELECT id, bucket, path, expires_at, used
-         FROM storage.signed_urls
-         WHERE token_hash = $1
-           AND bucket = $2
-           AND path = $3
-           AND expires_at > now()
-           AND used = false
-         FOR UPDATE`,
-        [tokenHash, bucket, path],
-      );
+      try {
+        await client.query('BEGIN');
 
-      if (result.rows.length === 0) {
-        this.logger.warn(
-          `Invalid or expired signed URL token for ${projectId}/${bucket}/${path}`,
+        const result = await client.query(
+          `SELECT id, bucket, path, expires_at, used
+           FROM storage.signed_urls
+           WHERE token_hash = $1
+             AND bucket = $2
+             AND path = $3
+             AND expires_at > now()
+             AND used = false
+           FOR UPDATE`,
+          [tokenHash, bucket, path],
         );
-        return { projectId, bucket, path, valid: false };
+
+        if (result.rows.length === 0) {
+          await client.query('ROLLBACK');
+          this.logger.warn(
+            `Invalid or expired signed URL token for ${projectId}/${bucket}/${path}`,
+          );
+          return { projectId, bucket, path, valid: false };
+        }
+
+        // Mark token as used (one-time use)
+        await client.query(
+          `UPDATE storage.signed_urls
+           SET used = true, used_at = now()
+           WHERE id = $1`,
+          [result.rows[0].id],
+        );
+
+        await client.query('COMMIT');
+        return { projectId, bucket, path, valid: true };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
       }
-
-      // Mark token as used (one-time use)
-      await pool.query(
-        `UPDATE storage.signed_urls
-         SET used = true, used_at = now()
-         WHERE id = $1`,
-        [result.rows[0].id],
-      );
-
-      return { projectId, bucket, path, valid: true };
     } catch (error) {
       this.logger.error(
         `Failed to validate signed URL for ${projectId}: ${error.message}`,

@@ -19,19 +19,25 @@ CONTAINER_NAME="postgrest-${PROJECT_ID}"
 CONFIG_FILE="/etc/postgrest.conf"
 IMAGE="launchdb/postgrest:v1"
 
-# Auto-detect network name (handles Docker Compose project prefix)
-# Docker Compose may prefix the network name with the project name (e.g., code_launchdb-internal)
-# We need to find the actual network name to ensure PostgREST can reach PgBouncer
-NETWORK=$(docker network ls --filter name=launchdb-internal --format '{{.Name}}' | head -1)
+# Auto-detect network name by finding which network pgbouncer is on
+# This ensures PostgREST joins the same network and can reach PgBouncer
+PGBOUNCER_CONTAINER=$(docker ps --filter name=pgbouncer --format '{{.Names}}' | head -1)
 
-if [ -z "$NETWORK" ]; then
-    echo "Error: launchdb-internal network not found"
-    echo "Available networks:"
-    docker network ls
+if [ -z "$PGBOUNCER_CONTAINER" ]; then
+    echo "Error: PgBouncer container not found"
+    echo "Available containers:"
+    docker ps --format '{{.Names}}'
     exit 1
 fi
 
-echo "Detected network: ${NETWORK}"
+NETWORK=$(docker inspect "$PGBOUNCER_CONTAINER" --format '{{range $net, $config := .NetworkSettings.Networks}}{{$net}}{{end}}' | head -1)
+
+if [ -z "$NETWORK" ]; then
+    echo "Error: Could not determine network for PgBouncer container"
+    exit 1
+fi
+
+echo "Detected network from PgBouncer: ${NETWORK}"
 
 # Paths inside manager container (mounted from host)
 MANAGER_CONFIG_DIR="/etc/postgrest/projects"

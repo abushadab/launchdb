@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:22-alpine3.23
 
 # Install Docker CLI for container management
 RUN apk add --no-cache docker-cli bash

@@ -1,4 +1,4 @@
-FROM postgres:15-alpine
+FROM postgres:15.15-alpine3.23
 
 # Install dependencies for backup scripts
 # - gpg: For encrypting backups with AES-256-GCM

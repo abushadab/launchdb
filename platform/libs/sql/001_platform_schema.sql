@@ -23,6 +23,7 @@ CREATE INDEX idx_owners_status ON platform.owners(status);
 CREATE TABLE platform.projects (
     id TEXT PRIMARY KEY,  -- e.g., 'proj_abc123'
     name TEXT NOT NULL,
+    display_name TEXT,  -- Optional display name for UI
     owner_id UUID NOT NULL REFERENCES platform.owners(id) ON DELETE CASCADE,
     status TEXT NOT NULL DEFAULT 'provisioning'
         CHECK (status IN ('provisioning', 'active', 'suspended', 'failed', 'deleted')),

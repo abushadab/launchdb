@@ -238,7 +238,7 @@ Registers an authenticator user in PgBouncer's userlist.
 **Usage:**
 
 ```bash
-./pgbouncer-add-user.sh <username> <password>
+PGBOUNCER_USER_PASSWORD=<password> ./pgbouncer-add-user.sh <username>
 ```
 
 **Parameters:**
@@ -246,12 +246,12 @@ Registers an authenticator user in PgBouncer's userlist.
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `username` | Yes | Username (e.g., `proj_abc123_authenticator`) |
-| `password` | Yes | Plain-text password (will be MD5 hashed) |
+| `PGBOUNCER_USER_PASSWORD` (env) | Yes | Plain-text password (will be MD5 hashed) |
 
 **Example:**
 
 ```bash
-./pgbouncer-add-user.sh proj_abc123_authenticator mySecurePassword123
+PGBOUNCER_USER_PASSWORD=mySecurePassword123 ./pgbouncer-add-user.sh proj_abc123_authenticator
 ```
 
 **What It Does:**
@@ -288,10 +288,10 @@ User 'proj_abc123_authenticator' successfully added to PgBouncer
 
 **Security Note:**
 
-Password is passed as command-line argument. This is secure within Docker exec context but visible in process list briefly. For production, consider:
-- Using environment variables
-- Reading from stdin
+Password is now passed via environment variable (`PGBOUNCER_USER_PASSWORD`), which prevents exposure in process lists. For enhanced production security, consider:
 - Using Docker secrets
+- Reading from stdin
+- Using a secrets management service (Vault, AWS Secrets Manager, etc.)
 
 **Implementation Highlights:**
 

@@ -774,7 +774,7 @@ command:
   - "-c"
   - "log_min_duration_statement=1000"  # Log queries > 1 second
   - "-c"
-  - "password_encryption=md5"       # PgBouncer requires MD5
+  - "password_encryption=scram-sha-256"  # Use SCRAM-SHA-256 for security
 ```
 
 **Key Settings:**
@@ -825,13 +825,17 @@ command:
 
 ---
 
-#### `password_encryption=md5`
+#### `password_encryption=scram-sha-256`
 
 **Default:** `scram-sha-256` (PostgreSQL 14+)
-**Current:** `md5`
-**Description:** Password hashing algorithm.
+**Current:** `scram-sha-256`
+**Description:** Password hashing algorithm for PostgreSQL authentication.
 
-**⚠️ CRITICAL:** PgBouncer requires MD5. Do NOT change to `scram-sha-256` or authentication will fail.
+**Architecture Note:**
+- PostgreSQL uses SCRAM-SHA-256 (secure) for client authentication
+- PgBouncer's `userlist.txt` uses MD5 format (internal limitation)
+- This is acceptable: MD5 is only used in PgBouncer's internal auth file, while the main PostgreSQL layer uses SCRAM-SHA-256
+- See `docs/infrastructure/pgbouncer-scripts.md` for details on MD5 hash generation for userlist.txt
 
 ---
 

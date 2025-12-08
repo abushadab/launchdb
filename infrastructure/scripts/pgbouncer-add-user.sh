@@ -1,15 +1,34 @@
 #!/bin/bash
 # Add a user to PgBouncer userlist.txt with MD5 hashed password
-# Usage: ./pgbouncer-add-user.sh <username> <password>
+# Usage: PGBOUNCER_USER_PASSWORD=<password> ./pgbouncer-add-user.sh <username>
 
 set -e
 
 USERNAME="${1}"
-PASSWORD="${2}"
+PASSWORD="${PGBOUNCER_USER_PASSWORD}"
 
 if [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
     echo "Error: username and password required"
-    echo "Usage: $0 <username> <password>"
+    echo "Usage: PGBOUNCER_USER_PASSWORD=<password> $0 <username>"
+    exit 1
+fi
+
+# Validate USERNAME format (alphanumeric, underscore, hyphen only)
+if ! [[ "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: username contains invalid characters (only alphanumeric, underscore, hyphen allowed)"
+    exit 1
+fi
+
+# Validate PASSWORD length and characters (avoid shell metacharacters)
+# Only allow safe characters to prevent injection in nested shell commands
+if [ ${#PASSWORD} -lt 8 ]; then
+    echo "Error: password must be at least 8 characters"
+    exit 1
+fi
+
+if ! [[ "$PASSWORD" =~ ^[a-zA-Z0-9@#%_+=!.-]+$ ]]; then
+    echo "Error: password contains invalid characters"
+    echo "Allowed characters: A-Z a-z 0-9 @ # % _ + = ! . -"
     exit 1
 fi
 

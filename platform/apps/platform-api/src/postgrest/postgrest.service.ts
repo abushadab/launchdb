@@ -105,6 +105,9 @@ export class PostgRestService {
     // URL-encode password to handle special characters (+/=) from base64
     const encodedPassword = encodeURIComponent(config.dbPassword);
 
+    // Escape quotes in JWT secret to prevent config corruption
+    const escapedJwtSecret = config.jwtSecret.replace(/"/g, '\\"');
+
     return `# PostgREST config for ${config.projectId}
 db-uri = "postgres://${config.authenticatorRole}:${encodedPassword}@${config.host}:${config.port}/${config.dbName}"
 db-schemas = "public,storage"
@@ -117,7 +120,7 @@ db-pool-timeout = 10
 # Prepared statements would persist and cause "already exists" errors (42P05)
 db-prepared-statements = false
 
-jwt-secret = "${config.jwtSecret}"
+jwt-secret = "${escapedJwtSecret}"
 jwt-aud = "authenticated"
 
 max-rows = 1000

@@ -1,4 +1,4 @@
-FROM alpine:3.19
+FROM alpine:3.23
 
 # Install dependencies
 # - libpq: PostgreSQL client library (required by PostgREST)

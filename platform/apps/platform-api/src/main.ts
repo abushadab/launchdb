@@ -21,8 +21,18 @@ async function bootstrap() {
     }),
   );
 
-  // Enable CORS for development
-  app.enableCors();
+  // Configure CORS
+  const corsOrigin = process.env.CORS_ORIGIN;
+  if (!corsOrigin) {
+    throw new Error(
+      'CORS_ORIGIN environment variable must be set for platform API',
+    );
+  }
+
+  app.enableCors({
+    origin: corsOrigin,
+    credentials: true,
+  });
 
   const port = process.env.PLATFORM_API_PORT || 8000;
   await app.listen(port);

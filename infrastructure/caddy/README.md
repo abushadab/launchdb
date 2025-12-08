@@ -60,10 +60,10 @@ handle /auth/* {
 ## Testing
 Test configuration:
 ```bash
-docker exec launchdb-caddy caddy validate --config /etc/caddy/Caddyfile
+docker compose exec reverse-proxy caddy validate --config /etc/caddy/Caddyfile
 ```
 
 Reload after changes:
 ```bash
-docker exec launchdb-caddy caddy reload --config /etc/caddy/Caddyfile
+docker compose exec reverse-proxy caddy reload --config /etc/caddy/Caddyfile
 ```

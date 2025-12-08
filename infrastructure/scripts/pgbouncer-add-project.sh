@@ -14,6 +14,23 @@ if [ -z "$PROJECT_ID" ]; then
     exit 1
 fi
 
+# Validate PROJECT_ID format (alphanumeric, underscore, hyphen only)
+if ! [[ "$PROJECT_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: project_id contains invalid characters (only alphanumeric, underscore, hyphen allowed)"
+    exit 1
+fi
+
+# Validate pool sizes are positive integers
+if ! [[ "$POOL_SIZE" =~ ^[0-9]+$ ]] || [ "$POOL_SIZE" -le 0 ]; then
+    echo "Error: pool_size must be a positive integer"
+    exit 1
+fi
+
+if ! [[ "$RESERVE_POOL" =~ ^[0-9]+$ ]] || [ "$RESERVE_POOL" -le 0 ]; then
+    echo "Error: reserve_pool must be a positive integer"
+    exit 1
+fi
+
 PGBOUNCER_CONTAINER="launchdb-pgbouncer"
 PGBOUNCER_INI="/etc/pgbouncer/pgbouncer.ini"
 

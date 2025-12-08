@@ -1,4 +1,4 @@
-FROM alpine:3.19
+FROM alpine:3.23
 
 # Install PgBouncer and dependencies
 RUN apk add --no-cache \
