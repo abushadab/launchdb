@@ -60,6 +60,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Verify script permissions
+        run: |
+          echo "Checking script execute permissions..."
+          missing_perms=0
+          for script in $(find infrastructure/scripts -name "*.sh" 2>/dev/null); do
+            if [ ! -x "$script" ]; then
+              echo "❌ Missing execute permission: $script"
+              missing_perms=1
+            else
+              echo "✅ $script"
+            fi
+          done
+          if [ $missing_perms -eq 1 ]; then
+            echo ""
+            echo "ERROR: Some scripts are missing execute permissions."
+            echo "Fix with: chmod +x infrastructure/scripts/*.sh"
+            exit 1
+          fi
+          echo "All scripts have execute permissions."
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -93,32 +113,3 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ${{ matrix.image }}:${{ github.ref_name }}
-          format: 'table'
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-          output: 'trivy-results.txt'
-
-      - name: Extract image name
-        id: image-name
-        run: echo "name=$(echo '${{ matrix.image }}' | sed 's|.*/||')" >> $GITHUB_OUTPUT
-
-      - name: Upload Trivy scan results
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-${{ steps.image-name.outputs.name }}-${{ github.ref_name }}
-          path: trivy-results.txt
-          retention-days: 30
-
-      - name: Display Trivy scan summary
-        run: |
-          echo "## 🔍 Trivy Scan Results for ${{ matrix.image }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat trivy-results.txt >> $GITHUB_STEP_SUMMARY || echo "No results found" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY

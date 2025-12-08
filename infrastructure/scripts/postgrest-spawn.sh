@@ -19,25 +19,32 @@ CONTAINER_NAME="postgrest-${PROJECT_ID}"
 CONFIG_FILE="/etc/postgrest.conf"
 IMAGE="launchdb/postgrest:v1"
 
-# Auto-detect network name by finding which network pgbouncer is on
-# This ensures PostgREST joins the same network and can reach PgBouncer
-PGBOUNCER_CONTAINER=$(docker ps --filter name=pgbouncer --format '{{.Names}}' | head -1)
+# Allow override via LAUNCHDB_NETWORK env variable for explicit configuration
+# Falls back to auto-detection from PgBouncer container
+if [ -n "$LAUNCHDB_NETWORK" ]; then
+    NETWORK="$LAUNCHDB_NETWORK"
+    echo "Using configured network: ${NETWORK}"
+else
+    # Auto-detect network name by finding which network pgbouncer is on
+    # This ensures PostgREST joins the same network and can reach PgBouncer
+    PGBOUNCER_CONTAINER=$(docker ps --filter name=pgbouncer --format '{{.Names}}' | head -1)
 
-if [ -z "$PGBOUNCER_CONTAINER" ]; then
-    echo "Error: PgBouncer container not found"
-    echo "Available containers:"
-    docker ps --format '{{.Names}}'
-    exit 1
+    if [ -z "$PGBOUNCER_CONTAINER" ]; then
+        echo "Error: PgBouncer container not found"
+        echo "Available containers:"
+        docker ps --format '{{.Names}}'
+        exit 1
+    fi
+
+    NETWORK=$(docker inspect "$PGBOUNCER_CONTAINER" --format '{{range $net, $config := .NetworkSettings.Networks}}{{$net}}{{end}}' | head -1)
+
+    if [ -z "$NETWORK" ]; then
+        echo "Error: Could not determine network for PgBouncer container"
+        exit 1
+    fi
+
+    echo "Detected network from PgBouncer: ${NETWORK}"
 fi
-
-NETWORK=$(docker inspect "$PGBOUNCER_CONTAINER" --format '{{range $net, $config := .NetworkSettings.Networks}}{{$net}}{{end}}' | head -1)
-
-if [ -z "$NETWORK" ]; then
-    echo "Error: Could not determine network for PgBouncer container"
-    exit 1
-fi
-
-echo "Detected network from PgBouncer: ${NETWORK}"
 
 # Paths inside manager container (mounted from host)
 MANAGER_CONFIG_DIR="/etc/postgrest/projects"
@@ -128,8 +135,9 @@ echo "Container ID: $(docker ps -qf name=${CONTAINER_NAME})"
 echo "Config file: ${CONFIG_FILE}"
 
 # Wait for container to be healthy
+# Timeout increased to 90s to align with installer expectations
 echo "Waiting for container to be healthy..."
-TIMEOUT=30
+TIMEOUT=90
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
     HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "starting")

@@ -26,17 +26,21 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Missing or invalid authorization header');
     }
 
-    // Debug logging: raw header
-    this.logger.debug('Auth header raw:', JSON.stringify(authHeader));
+    // Debug logging: raw header (only when LAUNCHDB_DEBUG=true)
+    if (process.env.LAUNCHDB_DEBUG === 'true') {
+      this.logger.debug('Auth header raw:', JSON.stringify(authHeader));
+    }
 
     // Extract and trim token to remove any stray whitespace
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-    // Debug logging: token details
-    this.logger.debug(
-      `Auth header length: ${authHeader.length}, Token length: ${token.length}`,
-    );
-    this.logger.debug(`Token preview: ${token.substring(0, 50)}...`);
+    // Debug logging: token details (only when LAUNCHDB_DEBUG=true)
+    if (process.env.LAUNCHDB_DEBUG === 'true') {
+      this.logger.debug(
+        `Auth header length: ${authHeader.length}, Token length: ${token.length}`,
+      );
+      this.logger.debug(`Token preview: ${token.substring(0, 50)}...`);
+    }
 
     try {
       const ownerId = await this.ownersService.verifyToken(token);

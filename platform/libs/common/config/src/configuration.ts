@@ -13,7 +13,7 @@ export default () => ({
   // Secrets & Keys (REQUIRED - no defaults for security)
   masterKey: process.env.LAUNCHDB_MASTER_KEY, // Base64-encoded 32 bytes, REQUIRED
   internalApiKey: process.env.INTERNAL_API_KEY, // REQUIRED for service-to-service auth
-  platformJwtSecret: process.env.PLATFORM_JWT_SECRET, // REQUIRED for platform owner tokens
+  platformJwtSecret: process.env.JWT_SECRET || process.env.PLATFORM_JWT_SECRET, // REQUIRED for platform owner tokens
 
   // PostgREST Configuration
   postgrestConfigDir: process.env.POSTGREST_CONFIG_DIR || '/etc/postgrest/projects',

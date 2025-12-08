@@ -232,8 +232,10 @@ export class ProjectCreatorService {
     // Spawn per-project PostgREST container
     // Manager will add PgBouncer database/user entries using dbPassword
     try {
-      // DEBUG: Log password value being passed
-      this.logger.debug(`[DEBUG] Calling spawnContainer with password: ${secrets.dbPassword ? '***EXISTS***' : 'UNDEFINED/EMPTY'} (length: ${secrets.dbPassword?.length || 0})`);
+      // DEBUG: Log password value being passed (only when LAUNCHDB_DEBUG=true)
+      if (process.env.LAUNCHDB_DEBUG === 'true') {
+        this.logger.debug(`[DEBUG] Calling spawnContainer with password: ${secrets.dbPassword ? '***EXISTS***' : 'UNDEFINED/EMPTY'} (length: ${secrets.dbPassword?.length || 0})`);
+      }
       await this.postgrestManagerService.spawnContainer(projectId, secrets.dbPassword);
       this.logger.log(`Step 7 complete: PostgREST container spawned for ${projectId}`);
     } catch (error) {
