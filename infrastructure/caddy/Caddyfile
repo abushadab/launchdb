@@ -14,7 +14,9 @@
 }
 
 # Main domain configuration
-{$DOMAIN} {
+# NOTE: Using http:// prefix when behind Cloudflare Tunnel to prevent redirect loops
+# Cloudflare handles TLS termination, so Caddy only receives HTTP from cloudflared
+http://{$DOMAIN} {
     # Request ID for tracing
     header {
         X-Request-ID {http.request.uuid}

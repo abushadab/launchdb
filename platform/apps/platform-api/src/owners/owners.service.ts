@@ -133,14 +133,6 @@ export class OwnersService {
       });
       return payload.sub;
     } catch (error) {
-      // Log the underlying verification issue to aid debugging (only when LAUNCHDB_DEBUG=true)
-      if (process.env.LAUNCHDB_DEBUG === 'true') {
-        this.logger.warn(
-          `JWT verification failed: ${error?.name || 'Error'} - ${
-            error?.message || 'unknown reason'
-          }`,
-        );
-      }
       throw new UnauthorizedException('Invalid or expired token');
     }
   }

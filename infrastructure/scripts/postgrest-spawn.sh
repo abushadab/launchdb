@@ -19,14 +19,13 @@ CONTAINER_NAME="postgrest-${PROJECT_ID}"
 CONFIG_FILE="/etc/postgrest.conf"
 IMAGE="launchdb/postgrest:v1"
 
-# Allow override via LAUNCHDB_NETWORK env variable for explicit configuration
-# Falls back to auto-detection from PgBouncer container
+# Auto-detect network name from PgBouncer container (handles Docker Compose project prefix)
+# This ensures PostgREST always joins the same network as PgBouncer
+# Can be overridden with LAUNCHDB_NETWORK env var
 if [ -n "$LAUNCHDB_NETWORK" ]; then
     NETWORK="$LAUNCHDB_NETWORK"
     echo "Using configured network: ${NETWORK}"
 else
-    # Auto-detect network name by finding which network pgbouncer is on
-    # This ensures PostgREST joins the same network and can reach PgBouncer
     PGBOUNCER_CONTAINER=$(docker ps --filter name=pgbouncer --format '{{.Names}}' | head -1)
 
     if [ -z "$PGBOUNCER_CONTAINER" ]; then
@@ -135,7 +134,6 @@ echo "Container ID: $(docker ps -qf name=${CONTAINER_NAME})"
 echo "Config file: ${CONFIG_FILE}"
 
 # Wait for container to be healthy
-# Timeout increased to 90s to align with installer expectations
 echo "Waiting for container to be healthy..."
 TIMEOUT=90
 ELAPSED=0

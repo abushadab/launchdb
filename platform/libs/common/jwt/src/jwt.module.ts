@@ -17,9 +17,9 @@ import { JwtService } from './jwt.service';
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('platformJwtSecret') || config.get<string>('JWT_SECRET'),
         signOptions: {
+          // NOTE: expiresIn removed - we always set exp explicitly in claims
+          // Having a default expiresIn causes "exp already set" conflicts
           algorithm: 'HS256',
-          // Note: expiresIn removed from global config to prevent conflicts
-          // All JWT claims should set exp manually in the payload
         },
       }),
     }),

@@ -83,13 +83,6 @@ app.get('/health', (req, res) => {
 app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (req, res) => {
   const { projectId, authenticatorPassword } = req.body;
 
-  // DEBUG: Log received parameters (only when LAUNCHDB_DEBUG=true)
-  if (process.env.LAUNCHDB_DEBUG === 'true') {
-    console.log(`[DEBUG] Received spawn request for ${projectId}`);
-    console.log(`[DEBUG] authenticatorPassword: ${authenticatorPassword ? '***EXISTS***' : 'UNDEFINED/EMPTY'} (type: ${typeof authenticatorPassword}, length: ${authenticatorPassword?.length || 0})`);
-    console.log(`[DEBUG] Full req.body:`, JSON.stringify(req.body));
-  }
-
   try {
     // Check if container already exists
     const { stdout: existsCheck } = await execAsync(
@@ -142,8 +135,8 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
       console.log(`Adding ${authenticatorUser} to PgBouncer userlist...`);
       try {
         const { stdout: userOut, stderr: userErr } = await execAsync(
-          `/scripts/pgbouncer-add-user.sh "${authenticatorUser}" "${authenticatorPassword}"`,
-          { cwd: '/app' }
+          `/scripts/pgbouncer-add-user.sh "${authenticatorUser}"`,
+          { cwd: '/app', env: { ...process.env, PGBOUNCER_USER_PASSWORD: authenticatorPassword } }
         );
         console.log(`PgBouncer user add: ${userOut}`);
         if (userErr) console.error(`PgBouncer user stderr: ${userErr}`);

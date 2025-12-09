@@ -8,14 +8,11 @@ import {
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
-  Logger,
 } from '@nestjs/common';
 import { OwnersService } from '../owners/owners.service';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  private readonly logger = new Logger(AuthGuard.name);
-
   constructor(private ownersService: OwnersService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -26,21 +23,7 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Missing or invalid authorization header');
     }
 
-    // Debug logging: raw header (only when LAUNCHDB_DEBUG=true)
-    if (process.env.LAUNCHDB_DEBUG === 'true') {
-      this.logger.debug('Auth header raw:', JSON.stringify(authHeader));
-    }
-
-    // Extract and trim token to remove any stray whitespace
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-
-    // Debug logging: token details (only when LAUNCHDB_DEBUG=true)
-    if (process.env.LAUNCHDB_DEBUG === 'true') {
-      this.logger.debug(
-        `Auth header length: ${authHeader.length}, Token length: ${token.length}`,
-      );
-      this.logger.debug(`Token preview: ${token.substring(0, 50)}...`);
-    }
+    const token = authHeader.substring(7);
 
     try {
       const ownerId = await this.ownersService.verifyToken(token);

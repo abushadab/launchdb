@@ -1,8 +1,16 @@
-# PgBouncer User Authentication
-# Format: "username" "password_hash"
-# Generate MD5: echo -n "passwordusername" | md5sum | cut -d" " -f1
-# Example: "myuser" "md5abc123..."
+# PgBouncer User Authentication with SCRAM-SHA-256
+# Format: "username" "SCRAM-SHA-256$..."
 #
-# This file will be populated automatically when projects are created.
-# DO NOT commit production passwords to version control\!
+# IMPORTANT: With auth_query enabled, most users authenticate dynamically via pg_shadow.
+# Only the following users need entries in this file:
+# - pgbouncer_auth (the auth_user that queries pg_shadow)
+# - postgres (superuser, for admin access)
+# - pgbouncer_admin (admin user, optional)
+#
+# To add pgbouncer_auth entry:
+# 1. Get SCRAM hash from PostgreSQL: SELECT passwd FROM pg_shadow WHERE usename = 'pgbouncer_auth';
+# 2. Add entry: "pgbouncer_auth" "SCRAM-SHA-256$4096:..."
+#
+# Project authenticator users (proj_xxx_authenticator) use auth_query automatically.
+# DO NOT commit production passwords to version control!
 

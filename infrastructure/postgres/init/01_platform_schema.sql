@@ -1,8 +1,15 @@
--- LaunchDB Platform Schema
--- This schema must be created in the platform Postgres instance
+-- LaunchDB Platform Schema Init Script
+-- This runs automatically when PostgreSQL container is first initialized
+-- File is executed from /docker-entrypoint-initdb.d/
+
+-- Note: Database 'platform' is created via POSTGRES_DB environment variable
+-- This script runs after the database is created
 
 -- Create platform schema
 CREATE SCHEMA IF NOT EXISTS platform;
+
+-- Create pgbouncer schema for auth_query
+CREATE SCHEMA IF NOT EXISTS pgbouncer;
 
 -- Owners table (dashboard admins/builders)
 CREATE TABLE platform.owners (

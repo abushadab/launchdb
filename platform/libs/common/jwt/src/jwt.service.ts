@@ -20,7 +20,7 @@ export class JwtService {
    */
   encode(claims: JwtClaims, secret: string): string {
     try {
-      return this.nestJwtService.sign(claims, {
+      return this.nestJwtService.sign(claims as any, {
         secret,
         algorithm: 'HS256',
       });
