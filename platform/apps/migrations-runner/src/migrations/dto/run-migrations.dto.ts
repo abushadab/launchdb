@@ -24,5 +24,5 @@ export class RunMigrationsResponseDto {
   migrations_skipped: number;
   total_duration_ms: number;
   results: MigrationResult[];
-  status: 'success' | 'partial' | 'failed';
+  status: 'success' | 'no_changes' | 'failed';
 }
