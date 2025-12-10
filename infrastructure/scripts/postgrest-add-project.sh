@@ -20,6 +20,12 @@ if [ -z "$PROJECT_ID" ] || [ -z "$JWT_SECRET" ] || [ -z "$AUTHENTICATOR_PASSWORD
     exit 1
 fi
 
+# Validate PROJECT_ID format (alphanumeric, underscore, hyphen only)
+if ! [[ "$PROJECT_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: project_id contains invalid characters (only alphanumeric, underscore, hyphen allowed)"
+    exit 1
+fi
+
 # URL-encode password to handle special characters (+/= from base64)
 # This prevents URI parsing issues in PostgREST db-uri
 urlencode() {

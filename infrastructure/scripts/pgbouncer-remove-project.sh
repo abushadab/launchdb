@@ -32,8 +32,8 @@ BACKUP_FILE="${PGBOUNCER_INI}.backup.$(date +%s)"
 docker exec --user root "${PGBOUNCER_CONTAINER}" cp "$PGBOUNCER_INI" "$BACKUP_FILE" 2>/dev/null || true
 echo "Backed up config to: $BACKUP_FILE"
 
-# Check if project exists
-if ! docker exec --user root "${PGBOUNCER_CONTAINER}" grep -q "^${PROJECT_ID} =" "$PGBOUNCER_INI" 2>/dev/null; then
+# Check if project exists (use -F for fixed string matching to avoid regex issues)
+if ! docker exec --user root "${PGBOUNCER_CONTAINER}" grep -qF "^${PROJECT_ID} =" "$PGBOUNCER_INI" 2>/dev/null; then
     echo "Warning: Project ${PROJECT_ID} not found in PgBouncer config"
     exit 0
 fi
@@ -48,7 +48,7 @@ docker exec --user root "${PGBOUNCER_CONTAINER}" sh -c "
   (
     flock -x 200
     TMPFILE=\$(mktemp)
-    grep -v '^${PROJECT_ID} =' ${PGBOUNCER_INI} > \"\${TMPFILE}\"
+    grep -vF '^${PROJECT_ID} =' ${PGBOUNCER_INI} > \"\${TMPFILE}\"
     cat \"\${TMPFILE}\" > ${PGBOUNCER_INI}
     rm \"\${TMPFILE}\"
   ) 200>${PGBOUNCER_INI}.lock

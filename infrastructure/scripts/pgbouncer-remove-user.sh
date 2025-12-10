@@ -32,8 +32,8 @@ BACKUP_FILE="${USERLIST}.backup.$(date +%s)"
 docker exec --user root "${PGBOUNCER_CONTAINER}" cp "$USERLIST" "$BACKUP_FILE" 2>/dev/null || true
 echo "Backed up userlist to: $BACKUP_FILE"
 
-# Check if user exists
-if ! docker exec --user root "${PGBOUNCER_CONTAINER}" grep -q "^\"${USERNAME}\"" "$USERLIST" 2>/dev/null; then
+# Check if user exists (use -F for fixed string matching to avoid regex issues)
+if ! docker exec --user root "${PGBOUNCER_CONTAINER}" grep -qF "^\"${USERNAME}\"" "$USERLIST" 2>/dev/null; then
     echo "Warning: User '${USERNAME}' not found in PgBouncer userlist"
     exit 0
 fi
@@ -48,7 +48,7 @@ docker exec --user root "${PGBOUNCER_CONTAINER}" sh -c "
   (
     flock -x 200
     TMPFILE=\$(mktemp)
-    grep -v '^\"${USERNAME}\"' ${USERLIST} > \"\${TMPFILE}\"
+    grep -vF '^\"${USERNAME}\"' ${USERLIST} > \"\${TMPFILE}\"
     cat \"\${TMPFILE}\" > ${USERLIST}
     rm \"\${TMPFILE}\"
   ) 200>${USERLIST}.lock

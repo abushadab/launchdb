@@ -81,21 +81,22 @@ fi
 if [ "$RETENTION_DAYS" -gt 0 ]; then
     log "Cleaning up remote files older than $RETENTION_DAYS days..."
 
-    # Extract remote host and path
-    REMOTE_HOST=$(echo "$RSYNC_DEST" | cut -d: -f1)
-    REMOTE_PATH=$(echo "$RSYNC_DEST" | cut -d: -f2)
+    # Extract remote host and path using bash parameter expansion
+    # More robust than cut for IPv6 addresses and paths with colons
+    REMOTE_HOST="${RSYNC_DEST%%:*}"
+    REMOTE_PATH="${RSYNC_DEST#*:}"
 
     # Run cleanup on remote
     # Use accept-new instead of no for better security (prevents MITM attacks on key changes)
     if [ -f "$RSYNC_SSH_KEY_PATH" ]; then
         if ssh -i "$RSYNC_SSH_KEY_PATH" -o StrictHostKeyChecking=accept-new \
-            "$REMOTE_HOST" "find $REMOTE_PATH -type f -mtime +$RETENTION_DAYS -delete" 2>&1 | tee -a "${LOG_FILE}"; then
+            "$REMOTE_HOST" "find '$REMOTE_PATH' -type f -mtime +$RETENTION_DAYS -delete" 2>&1 | tee -a "${LOG_FILE}"; then
             log "Remote cleanup completed"
         else
             log "WARNING: Remote cleanup failed (non-critical)"
         fi
     else
-        if ssh "$REMOTE_HOST" "find $REMOTE_PATH -type f -mtime +$RETENTION_DAYS -delete" 2>&1 | tee -a "${LOG_FILE}"; then
+        if ssh "$REMOTE_HOST" "find '$REMOTE_PATH' -type f -mtime +$RETENTION_DAYS -delete" 2>&1 | tee -a "${LOG_FILE}"; then
             log "Remote cleanup completed"
         else
             log "WARNING: Remote cleanup failed (non-critical)"

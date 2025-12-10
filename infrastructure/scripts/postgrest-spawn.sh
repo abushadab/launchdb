@@ -15,6 +15,12 @@ if [ -z "$PROJECT_ID" ]; then
     exit 1
 fi
 
+# Validate PROJECT_ID format (alphanumeric, underscore, hyphen only)
+if ! [[ "$PROJECT_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: project_id contains invalid characters (only alphanumeric, underscore, hyphen allowed)"
+    exit 1
+fi
+
 CONTAINER_NAME="postgrest-${PROJECT_ID}"
 CONFIG_FILE="/etc/postgrest.conf"
 IMAGE="launchdb/postgrest:v1"
