@@ -12,6 +12,12 @@ if [ -z "$USERNAME" ]; then
     exit 1
 fi
 
+# Validate USERNAME format (alphanumeric, underscore, hyphen only)
+if ! [[ "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: username contains invalid characters (only alphanumeric, underscore, hyphen allowed)"
+    exit 1
+fi
+
 PGBOUNCER_CONTAINER="launchdb-pgbouncer"
 USERLIST="/etc/pgbouncer/userlist.txt"
 

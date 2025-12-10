@@ -99,8 +99,8 @@ X-Internal-Key: <internal_api_key>
 
 **Important Notes:**
 - If `authenticatorPassword` is not provided, a warning is logged and PgBouncer authentication may fail
-- Password should be passed as raw string (not URL-encoded)
-- Manager handles PgBouncer MD5 hashing internally
+- Password should be passed as raw string (not URL-encoded) to this API
+- PgBouncer uses SCRAM-SHA-256 with auth_query (dynamically queries pg_shadow for password hashes)
 
 ---
 
@@ -212,6 +212,7 @@ await db.query(`CREATE DATABASE ${projectId}`);
 await db.query(`CREATE ROLE ${projectId}_authenticator LOGIN PASSWORD $1`, [authenticatorPassword]);
 
 // 3. Write PostgREST config
+// IMPORTANT: URL-encode password for PostgREST config file (db-uri connection string)
 const encodedPassword = encodeURIComponent(authenticatorPassword);
 await fs.writeFile(`/etc/postgrest/projects/${projectId}.conf`, `
 db-uri = "postgres://${projectId}_authenticator:${encodedPassword}@pgbouncer:6432/${projectId}"
@@ -230,7 +231,7 @@ const response = await fetch('http://postgrest-manager:9000/internal/postgrest/s
   },
   body: JSON.stringify({
     projectId: projectId,
-    authenticatorPassword: authenticatorPassword  // Pass raw password
+    authenticatorPassword: authenticatorPassword  // Pass raw password (NOT URL-encoded) to API
   })
 });
 

@@ -42,6 +42,8 @@ code/
 ├── scripts/                    # Management scripts
 │   ├── pgbouncer-add-project.sh
 │   ├── pgbouncer-add-user.sh
+│   ├── pgbouncer-remove-project.sh
+│   ├── pgbouncer-remove-user.sh
 │   ├── postgrest-add-project.sh
 │   ├── postgrest-spawn.sh
 │   ├── postgrest-stop.sh

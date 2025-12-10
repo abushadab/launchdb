@@ -56,7 +56,7 @@ if [ -f "$RSYNC_SSH_KEY_PATH" ]; then
     log "Using SSH key: $RSYNC_SSH_KEY_PATH"
     # Use accept-new instead of no for better security (prevents MITM attacks on key changes)
     if rsync -avz --delete --stats \
-        -e "ssh -i $RSYNC_SSH_KEY_PATH -o StrictHostKeyChecking=accept-new" \
+        -e "ssh -i \"$RSYNC_SSH_KEY_PATH\" -o StrictHostKeyChecking=accept-new" \
         --exclude '*.tmp' --exclude '.DS_Store' --exclude 'Thumbs.db' \
         "$STORAGE_PATH/" "$RSYNC_DEST/" 2>&1 | tee -a "${LOG_FILE}"; then
         END_TIME=$(date +%s)

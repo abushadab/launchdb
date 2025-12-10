@@ -70,20 +70,22 @@ cd infrastructure
 # Copy template
 cp .env.example .env
 
-# Generate secrets
-echo "POSTGRES_SUPERUSER_PASSWORD=$(openssl rand -base64 24)" >> .env
-echo "AUTHENTICATOR_PASSWORD=$(openssl rand -base64 24)" >> .env
-echo "LAUNCHDB_MASTER_KEY=$(openssl rand -base64 32)" >> .env
-echo "PLATFORM_JWT_SECRET=$(openssl rand -base64 32)" >> .env
-echo "POSTGREST_JWT_SECRET=$(openssl rand -base64 32)" >> .env
-echo "INTERNAL_API_KEY=$(openssl rand -hex 32)" >> .env
-echo "POSTGREST_ADMIN_KEY=$(openssl rand -hex 32)" >> .env
-echo "BACKUP_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+# Generate and replace secrets (using sed to avoid duplicates)
+sed -i "s|POSTGRES_SUPERUSER_PASSWORD=.*|POSTGRES_SUPERUSER_PASSWORD=$(openssl rand -base64 24)|" .env
+sed -i "s|AUTHENTICATOR_PASSWORD=.*|AUTHENTICATOR_PASSWORD=$(openssl rand -base64 24)|" .env
+sed -i "s|LAUNCHDB_MASTER_KEY=.*|LAUNCHDB_MASTER_KEY=$(openssl rand -base64 32)|" .env
+sed -i "s|PLATFORM_JWT_SECRET=.*|PLATFORM_JWT_SECRET=$(openssl rand -base64 32)|" .env
+sed -i "s|POSTGREST_JWT_SECRET=.*|POSTGREST_JWT_SECRET=$(openssl rand -base64 32)|" .env
+sed -i "s|INTERNAL_API_KEY=.*|INTERNAL_API_KEY=$(openssl rand -hex 32)|" .env
+sed -i "s|POSTGREST_ADMIN_KEY=.*|POSTGREST_ADMIN_KEY=$(openssl rand -hex 32)|" .env
+sed -i "s|BACKUP_ENCRYPTION_KEY=.*|BACKUP_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
 
-# Edit and set domain/email
+# Set domain and email
+sed -i "s|DOMAIN=.*|DOMAIN=your-domain.com|" .env
+sed -i "s|ACME_EMAIL=.*|ACME_EMAIL=your-email@example.com|" .env
+
+# Review and adjust any remaining values
 nano .env
-# Set DOMAIN=your-domain.com
-# Set ACME_EMAIL=your-email@example.com
 ```
 
 **IMPORTANT**: Back up the `.env` file securely! Store in password manager or encrypted vault.
@@ -256,8 +258,8 @@ mkdir -p backup/ssh
 cp backup_key backup/ssh/backup_key
 chmod 600 backup/ssh/backup_key
 
-# Update .env
-echo 'RSYNC_DEST=backup-user@backup.example.com:/var/backups/launchdb' >> .env
+# Update .env with remote backup destination
+sed -i 's|RSYNC_DEST=.*|RSYNC_DEST=backup-user@backup.example.com:/var/backups/launchdb|' .env
 
 # Restart backup container
 docker-compose restart backup

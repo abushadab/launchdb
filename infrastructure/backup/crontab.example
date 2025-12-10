@@ -21,4 +21,4 @@
 0 1 * * 0 docker exec launchdb-backup /backup.sh --all
 
 # Backup logs cleanup - Monthly on the 1st at 4:00 AM
-0 4 1 * * find /var/lib/docker/volumes/launchdb_backup-data/_data -name "*.log" -mtime +30 -delete
+0 4 1 * * docker exec launchdb-backup find /backups -name "*.log" -mtime +30 -delete
