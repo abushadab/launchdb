@@ -631,6 +631,10 @@ if [ "$USE_CLOUDFLARE_TUNNEL" = true ]; then
     # Step 6: Start services
     log_info "Starting LaunchDB with Cloudflare Tunnel..."
     cd "$INSTALL_DIR"
+
+    # Ensure scripts have execute permissions (safety net for ZIP downloads/Windows)
+    chmod +x "$INSTALL_DIR/infrastructure/scripts/"*.sh 2>/dev/null || true
+
     docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml --profile cloudflare up -d
 
     log_success "LaunchDB started with Cloudflare Tunnel!"
@@ -644,6 +648,10 @@ fi
 # ============================================================
 
 log_section "Starting LaunchDB"
+
+# Ensure scripts have execute permissions (safety net for ZIP downloads/Windows)
+log_info "Setting script permissions..."
+chmod +x "$INSTALL_DIR/infrastructure/scripts/"*.sh 2>/dev/null || true
 
 log_info "Starting Docker services..."
 
