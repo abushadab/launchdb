@@ -80,12 +80,16 @@ CREATE TABLE platform.api_keys (
     scopes JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at TIMESTAMPTZ,
-    last_used_at TIMESTAMPTZ,
-    UNIQUE(project_id, key_type)
+    last_used_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_api_keys_project_id ON platform.api_keys(project_id);
 CREATE INDEX idx_api_keys_public_key ON platform.api_keys(public_key);
+
+-- Partial unique index: only one active key per type per project
+-- Allows multiple revoked keys for history
+CREATE UNIQUE INDEX idx_api_keys_active_type ON platform.api_keys(project_id, key_type)
+    WHERE revoked_at IS NULL;
 
 -- Audit log for important platform operations
 CREATE TABLE platform.audit_log (

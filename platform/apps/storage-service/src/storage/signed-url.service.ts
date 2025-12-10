@@ -4,7 +4,7 @@
  * Per interfaces.md §6
  */
 
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TokenHashService, CryptoService } from '@launchdb/common/crypto';
 import { DatabaseService } from '@launchdb/common/database';
@@ -25,7 +25,7 @@ export interface SignedUrlValidation {
 }
 
 @Injectable()
-export class SignedUrlService {
+export class SignedUrlService implements OnModuleDestroy {
   private readonly logger = new Logger(SignedUrlService.name);
   private readonly projectPools = new Map<string, Pool>();
 
@@ -203,5 +203,16 @@ export class SignedUrlService {
     }
 
     return this.projectPools.get(projectId)!;
+  }
+
+  /**
+   * Cleanup connection pools (for graceful shutdown)
+   */
+  async onModuleDestroy() {
+    for (const [projectId, pool] of this.projectPools.entries()) {
+      await pool.end();
+      this.logger.log(`Closed connection pool for project ${projectId}`);
+    }
+    this.projectPools.clear();
   }
 }

@@ -71,7 +71,8 @@ export class PostgRestProxyController {
     }
 
     // Generate request ID for tracing
-    const requestId = req.headers['x-request-id'] || randomUUID();
+    const requestIdHeader = req.headers['x-request-id'];
+    const requestId = (Array.isArray(requestIdHeader) ? requestIdHeader[0] : requestIdHeader) || randomUUID();
 
     // Create proxy middleware
     const proxy = createProxyMiddleware({

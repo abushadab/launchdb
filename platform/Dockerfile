@@ -60,6 +60,9 @@ COPY --from=builder --chown=nodejs:nodejs /app/libs/sql ./libs/sql
 
 USER nodejs
 
+# Set default PORT (will be overridden by docker-compose)
+ENV PORT=8000
+
 # Expose port (will be overridden by docker-compose)
 EXPOSE 8000
 

@@ -58,22 +58,24 @@ export class StorageService {
 
     // Store metadata in database
     const pool = await this.getProjectPool(projectId);
-    await pool.query(
+    const result = await pool.query(
       `INSERT INTO storage.objects (id, bucket, path, size, content_type, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, now(), now())
        ON CONFLICT (bucket, path) DO UPDATE
        SET size = EXCLUDED.size,
            content_type = EXCLUDED.content_type,
-           updated_at = now()`,
+           updated_at = now()
+       RETURNING id`,
       [objectId, bucket, path, metadata.size, metadata.contentType],
     );
+    const actualObjectId = result.rows[0].id;
 
     // Build public URL
     const baseUrl = this.configService.get<string>('baseUrl');
     const url = `${baseUrl}/storage/${projectId}/${bucket}/${path}`;
 
     return {
-      object_id: objectId,
+      object_id: actualObjectId,
       bucket,
       path,
       size: metadata.size,

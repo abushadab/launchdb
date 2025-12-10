@@ -191,7 +191,10 @@ export class ProjectCreatorService {
       const response = await axios.post(
         `${this.migrationsRunnerUrl}/internal/migrations/run`,
         { project_id: projectId },
-        { headers: { 'x-internal-api-key': this.internalApiKey } },
+        {
+          headers: { 'x-internal-api-key': this.internalApiKey },
+          timeout: 60000, // 60 second timeout for migrations
+        },
       );
 
       this.logger.log(`Migrations completed: ${JSON.stringify(response.data.summary)}`);

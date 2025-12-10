@@ -67,7 +67,7 @@ export class MigrationsService {
     await this.ensureMigrationStateTable(pool);
 
     // Get already-applied migrations
-    const appliedMigrations = await this.getAppliedMigrations(pool);
+    const appliedMigrations = await this.getAppliedMigrations(pool, projectId);
     const appliedMap = new Map(
       appliedMigrations.map((m) => [m.name, m.checksum]),
     );
@@ -230,12 +230,15 @@ export class MigrationsService {
    */
   private async getAppliedMigrations(
     pool: Pool,
+    projectId: string,
   ): Promise<Array<{ name: string; checksum: string }>> {
     try {
       const result = await pool.query(
         `SELECT migration_name as name, checksum
          FROM platform.migration_state
+         WHERE project_id = $1
          ORDER BY executed_at`,
+        [projectId],
       );
       return result.rows;
     } catch (error) {

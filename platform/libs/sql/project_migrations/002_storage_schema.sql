@@ -23,22 +23,22 @@ CREATE INDEX idx_buckets_public ON storage.buckets(public);
 -- Objects table
 CREATE TABLE storage.objects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    bucket_id UUID NOT NULL REFERENCES storage.buckets(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,  -- file path within bucket
+    bucket TEXT NOT NULL,  -- bucket name
+    path TEXT NOT NULL,  -- file path within bucket
     owner_id UUID,  -- Reference to auth.users(id), NULL for public uploads
     size BIGINT NOT NULL,  -- bytes
-    mime_type TEXT NOT NULL,
+    content_type TEXT NOT NULL,
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_accessed_at TIMESTAMPTZ,
     version TEXT NOT NULL DEFAULT 'v1',
-    UNIQUE(bucket_id, name)
+    UNIQUE(bucket, path)
 );
 
-CREATE INDEX idx_objects_bucket_id ON storage.objects(bucket_id);
+CREATE INDEX idx_objects_bucket ON storage.objects(bucket);
 CREATE INDEX idx_objects_owner_id ON storage.objects(owner_id);
-CREATE INDEX idx_objects_name ON storage.objects(bucket_id, name);
+CREATE INDEX idx_objects_path ON storage.objects(bucket, path);
 CREATE INDEX idx_objects_created_at ON storage.objects(created_at DESC);
 
 -- Signed URLs / temporary access tokens
@@ -53,8 +53,7 @@ CREATE TABLE storage.signed_urls (
     max_access_count INT  -- NULL = unlimited
 );
 
-CREATE INDEX idx_signed_urls_token_hash ON storage.signed_urls(token_hash)
-    WHERE expires_at > now();
+CREATE INDEX idx_signed_urls_token_hash ON storage.signed_urls(token_hash);
 CREATE INDEX idx_signed_urls_object_id ON storage.signed_urls(object_id);
 CREATE INDEX idx_signed_urls_expires_at ON storage.signed_urls(expires_at);
 
