@@ -42,18 +42,18 @@ ENV SERVICE_NAME=${SERVICE_NAME}
 # Copy package files
 COPY package*.json ./
 
-# Install production dependencies only
-RUN npm ci --only=production --quiet && npm cache clean --force
-
 # Create non-root user first
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
+# Install production dependencies only (as nodejs user for correct ownership)
+RUN npm ci --omit=dev --quiet && npm cache clean --force && chown -R nodejs:nodejs node_modules
+
 # Copy built application from builder with correct ownership
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 
-# Copy node_modules from builder with correct ownership
-COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
+# NOTE: We do NOT copy node_modules from builder - use production-only deps from line 46
+# This excludes dev dependencies (typescript, jest, etc.) reducing image size and CVEs
 
 # Copy SQL migration files from builder
 COPY --from=builder --chown=nodejs:nodejs /app/libs/sql ./libs/sql
