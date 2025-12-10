@@ -50,10 +50,10 @@ export class JwtAuthGuard implements CanActivate {
       if (
         !payload ||
         typeof payload !== 'object' ||
-        typeof payload.user_id !== 'string' ||
+        typeof payload.sub !== 'string' ||
         typeof payload.project_id !== 'string' ||
         typeof payload.role !== 'string' ||
-        !payload.user_id ||
+        !payload.sub ||
         !payload.project_id ||
         !payload.role
       ) {
