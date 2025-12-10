@@ -1,0 +1,11 @@
+# Trivy Ignore File for LaunchDB Platform Services
+# https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/
+
+# CVE-2025-64756: glob command injection vulnerability
+# Reason: False positive - vulnerability is in npm CLI's bundled glob package
+# Context: npm bundles glob@10.3.7-11.0.3 which has CVE in CLI interface (-c flag)
+#          npm only uses glob's library interface, not CLI, so not exploitable
+# Reference: https://github.com/npm/cli/issues/8741
+# Resolution: Will be fixed when npm releases version with glob@11.1.0+
+# Last checked: 10 Dec 2025
+CVE-2025-64756
