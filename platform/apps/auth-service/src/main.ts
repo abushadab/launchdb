@@ -5,10 +5,11 @@
  */
 
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  const logger = new Logger('Auth Service');
   const app = await NestFactory.create(AppModule);
 
   // Global validation pipe
@@ -36,7 +37,11 @@ async function bootstrap() {
   const port = process.env.AUTH_SERVICE_PORT || 8001;
   await app.listen(port);
 
-  console.log(`Auth Service listening on port ${port}`);
+  logger.log(`Auth Service listening on port ${port}`);
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  const logger = new Logger('Bootstrap');
+  logger.error('Failed to start Auth Service', error.stack);
+  process.exit(1);
+});

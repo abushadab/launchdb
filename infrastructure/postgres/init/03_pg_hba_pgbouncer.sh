@@ -16,13 +16,16 @@ cp "$PG_HBA" "$PG_HBA.bak"
     head -n -1 "$PG_HBA.bak"
 
     # Add pgbouncer_auth trust rule (must come before catch-all)
+    # Restricted to Docker network ranges only
     echo "# PgBouncer auth_query user - needs trust to query pg_shadow"
-    echo "host    all             pgbouncer_auth  0.0.0.0/0               trust"
+    echo "host    all             pgbouncer_auth  172.16.0.0/12           trust"
+    echo "host    all             pgbouncer_auth  192.168.0.0/16          trust"
     echo ""
 
-    # Add back the catch-all scram-sha-256 rule
-    echo "# All other remote connections use SCRAM-SHA-256"
-    echo "host    all             all             0.0.0.0/0               scram-sha-256"
+    # Add back the scram-sha-256 rule for Docker networks only
+    echo "# All other remote connections use SCRAM-SHA-256 (Docker networks only)"
+    echo "host    all             all             172.16.0.0/12           scram-sha-256"
+    echo "host    all             all             192.168.0.0/16          scram-sha-256"
 } > "$PG_HBA"
 
 echo "=== Updated pg_hba.conf ==="

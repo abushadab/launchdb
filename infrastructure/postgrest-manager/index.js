@@ -50,18 +50,20 @@ const authenticate = (req, res, next) => {
   const apiKeyBuffer = Buffer.from(apiKey);
   const expectedKeyBuffer = Buffer.from(INTERNAL_API_KEY);
 
-  // Check length first (timingSafeEqual requires same length)
-  // Use a timing-safe length check to avoid leaking length information
-  let isValid = apiKeyBuffer.length === expectedKeyBuffer.length;
+  // Timing-safe authentication: always perform same work regardless of length
+  // If lengths differ, compare against dummy buffer to prevent length-based timing leaks
+  const lengthMatches = apiKeyBuffer.length === expectedKeyBuffer.length;
+  const compareBuffer = lengthMatches ? apiKeyBuffer : Buffer.alloc(expectedKeyBuffer.length);
 
-  if (isValid) {
-    try {
-      isValid = crypto.timingSafeEqual(apiKeyBuffer, expectedKeyBuffer);
-    } catch (err) {
-      // timingSafeEqual can throw if buffers are different lengths
-      // This should not happen due to our length check above, but handle it anyway
-      isValid = false;
-    }
+  // Always perform timing-safe comparison (constant time for content)
+  let isValid = false;
+  try {
+    const contentMatches = crypto.timingSafeEqual(compareBuffer, expectedKeyBuffer);
+    // Only valid if BOTH length matches AND content matches
+    isValid = lengthMatches && contentMatches;
+  } catch (err) {
+    // Should not happen with our buffer setup, but handle defensively
+    isValid = false;
   }
 
   if (!isValid) {

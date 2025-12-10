@@ -161,8 +161,8 @@ CREATE POLICY email_verification_tokens_service_role_all ON auth.email_verificat
 GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
 
 -- Anon can't access auth tables directly (auth service handles signup/login)
--- Authenticated users can read their own data via RLS policies
-GRANT SELECT ON auth.users TO authenticated;
+-- Authenticated users can read/update their own data via RLS policies
+GRANT SELECT, UPDATE ON auth.users TO authenticated;
 GRANT SELECT ON auth.sessions TO authenticated;
 
 -- Service role has full access

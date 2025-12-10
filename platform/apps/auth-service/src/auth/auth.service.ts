@@ -59,36 +59,49 @@ export class AuthService {
     // Generate user ID
     const userId = this.generateUserId();
 
-    // Insert user
+    // Wrap user creation and session creation in transaction
+    const client = await pool.connect();
     try {
-      await pool.query(
-        `INSERT INTO auth.users (id, email, password_hash, created_at, updated_at)
-         VALUES ($1, $2, $3, now(), now())`,
-        [userId, dto.email, passwordHash],
-      );
-    } catch (error) {
-      if (error.code === '23505') {
-        // Unique violation
-        throw new ConflictException('Email already registered');
+      await client.query('BEGIN');
+
+      // Insert user
+      try {
+        await client.query(
+          `INSERT INTO auth.users (id, email, password_hash, created_at, updated_at)
+           VALUES ($1, $2, $3, now(), now())`,
+          [userId, dto.email, passwordHash],
+        );
+      } catch (error) {
+        if (error.code === '23505') {
+          // Unique violation
+          throw new ConflictException('Email already registered');
+        }
+        throw error;
       }
+
+      // Create session within the same transaction
+      const { accessToken, refreshToken } = await this.createSessionWithClient(
+        client,
+        userId,
+        projectId,
+        config.jwtSecret,
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        user_id: userId,
+        email: dto.email,
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_in: this.ACCESS_TOKEN_TTL,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
       throw error;
+    } finally {
+      client.release();
     }
-
-    // Create session
-    const { accessToken, refreshToken } = await this.createSession(
-      pool,
-      userId,
-      projectId,
-      config.jwtSecret,
-    );
-
-    return {
-      user_id: userId,
-      email: dto.email,
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      expires_in: this.ACCESS_TOKEN_TTL,
-    };
   }
 
   /**
@@ -332,6 +345,48 @@ export class AuthService {
     } finally {
       client.release();
     }
+
+    return { accessToken, refreshToken };
+  }
+
+  /**
+   * Create session and tokens using existing client (for use within transaction)
+   */
+  private async createSessionWithClient(
+    client: any,
+    userId: string,
+    projectId: string,
+    jwtSecret: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    // Generate tokens
+    const accessToken = this.jwtService.createAccessToken(
+      userId,
+      projectId,
+      JwtRole.AUTHENTICATED,
+      jwtSecret,
+      this.ACCESS_TOKEN_TTL,
+    );
+
+    const refreshToken = this.generateRefreshToken();
+    const tokenHash = this.tokenHashService.hash(refreshToken);
+
+    // Create session and refresh token (no transaction - already within one)
+    const sessionId = this.generateSessionId();
+    const expiresAt = new Date(Date.now() + this.REFRESH_TOKEN_TTL * 1000);
+
+    // Create session
+    await client.query(
+      `INSERT INTO auth.sessions (id, user_id, created_at, last_active)
+       VALUES ($1, $2, now(), now())`,
+      [sessionId, userId],
+    );
+
+    // Create refresh token
+    await client.query(
+      `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, now(), now())`,
+      [sessionId, userId, tokenHash, expiresAt],
+    );
 
     return { accessToken, refreshToken };
   }

@@ -46,6 +46,16 @@ if [ ! -f "$BACKUP_FILE" ]; then
     error_exit "Backup file not found: $BACKUP_FILE"
 fi
 
+# Validate TARGET_DB format to prevent SQL injection
+# Allow alphanumeric, underscore, and hyphen only
+if [ -z "$TARGET_DB" ]; then
+    error_exit "Target database name is required"
+fi
+
+if ! [[ "$TARGET_DB" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    error_exit "Invalid database name: $TARGET_DB (only alphanumeric, underscore, hyphen allowed)"
+fi
+
 if [ -z "${POSTGRES_PASSWORD:-}" ]; then
     error_exit "POSTGRES_PASSWORD is required"
 fi

@@ -170,10 +170,10 @@ PROJECTS_DB_PORT=5432
 
 ### v1.1 Deferred Steps
 
-2. ⏳ **Revoke API keys** — Requires api_keys table (not yet implemented)
-3. ⏳ **Invalidate caches** — Requires cache invalidation endpoints in auth/storage services
-4. ⏳ **Delete storage files** — Requires storage cleanup endpoint: `DELETE /internal/projects/{id}/files`
-7. ⏳ **Drop database + roles** — Decision needed: async job vs immediate deletion
+5. ⏳ **Revoke API keys** — Requires api_keys table (not yet implemented)
+6. ⏳ **Invalidate caches** — Requires cache invalidation endpoints in auth/storage services
+7. ⏳ **Delete storage files** — Requires storage cleanup endpoint: `DELETE /internal/projects/{id}/files`
+8. ⏳ **Drop database + roles** — Decision needed: async job vs immediate deletion
 
 **Manual Cleanup Required (v1.0)**:
 ```sql

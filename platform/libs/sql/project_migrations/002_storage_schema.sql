@@ -97,7 +97,7 @@ CREATE POLICY objects_select_public ON storage.objects
     USING (
         EXISTS (
             SELECT 1 FROM storage.buckets
-            WHERE buckets.id = objects.bucket_id
+            WHERE buckets.name = objects.bucket
             AND buckets.public = true
         )
     );
