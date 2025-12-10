@@ -96,7 +96,7 @@ export class ProjectCreatorService {
       // Mark project as failed
       await this.databaseService.query(
         'UPDATE platform.projects SET status = $1 WHERE id = $2',
-        ['failed', projectId],
+        [ProjectStatus.FAILED, projectId],
       );
 
       throw error;
@@ -254,7 +254,7 @@ export class ProjectCreatorService {
       // Mark project as 'failed' (no rollback per Codex guidance)
       await this.databaseService.query(
         `UPDATE platform.projects SET status = $1, updated_at = now() WHERE id = $2`,
-        ['failed', projectId],
+        [ProjectStatus.FAILED, projectId],
       );
 
       this.logger.error(

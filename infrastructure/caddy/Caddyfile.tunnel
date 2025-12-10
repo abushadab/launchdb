@@ -1,6 +1,6 @@
 {
     # Global options
-    admin 0.0.0.0:2019
+    admin localhost:2019
 
     # Disable automatic HTTPS (cloudflared handles TLS)
     auto_https off

@@ -32,6 +32,23 @@ export class StorageController {
   constructor(private storageService: StorageService) {}
 
   /**
+   * Validate path to prevent directory traversal attacks
+   */
+  private validatePath(path: string): void {
+    if (!path) {
+      throw new BadRequestException('Path is required');
+    }
+    // Reject paths with directory traversal attempts
+    if (path.includes('..')) {
+      throw new BadRequestException('Path contains invalid directory traversal');
+    }
+    // Reject absolute paths
+    if (path.startsWith('/')) {
+      throw new BadRequestException('Path must be relative');
+    }
+  }
+
+  /**
    * POST /storage/:projectId/:bucket/*
    * Upload file
    */
@@ -49,12 +66,17 @@ export class StorageController {
       throw new BadRequestException('No file uploaded');
     }
     const bucketName = query.bucket || bucket || 'default';
+    const filePath = path || file.originalname;
+
+    // Validate path for security
+    this.validatePath(filePath);
+
     const stream = Readable.from(file.buffer);
 
     return this.storageService.uploadFile(
       projectId,
       bucketName,
-      path || file.originalname,
+      filePath,
       stream,
       file.mimetype,
     );
@@ -72,6 +94,9 @@ export class StorageController {
     @Query('token') token: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
+    // Validate path for security
+    this.validatePath(path);
+
     let result;
 
     if (token) {
@@ -111,6 +136,9 @@ export class StorageController {
     @Param('bucket') bucket: string,
     @Param('0') path: string,
   ): Promise<DeleteResponseDto> {
+    // Validate path for security
+    this.validatePath(path);
+
     await this.storageService.deleteFile(projectId, bucket, path);
     return { message: 'File deleted successfully' };
   }
@@ -125,6 +153,9 @@ export class StorageController {
     @Param('projectId') projectId: string,
     @Body() dto: CreateSignedUrlDto,
   ): Promise<SignedUrlResponseDto> {
+    // Validate path for security
+    this.validatePath(dto.path);
+
     const bucket = dto.bucket || 'default';
     const expiresIn = dto.expires_in || 300; // Default 5 minutes
 

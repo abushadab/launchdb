@@ -8,7 +8,7 @@ CREATE SCHEMA IF NOT EXISTS platform;
 CREATE TABLE platform.owners (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,  -- argon2id hash
+    password_hash TEXT NOT NULL,  -- Argon2id hash (timeCost: 2, memoryCost: 64MB, parallelism: 1, hashLength: 32)
     name TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -76,7 +76,7 @@ CREATE TABLE platform.api_keys (
     project_id TEXT NOT NULL REFERENCES platform.projects(id) ON DELETE CASCADE,
     key_type TEXT NOT NULL CHECK (key_type IN ('anon', 'service_role')),
     public_key TEXT NOT NULL UNIQUE,  -- e.g., 'pk_proj_abc123_anon_xxx'
-    secret_id UUID NOT NULL REFERENCES platform.secrets(id),  -- points to encrypted secret
+    secret_id UUID NOT NULL REFERENCES platform.secrets(id) ON DELETE CASCADE,  -- cascade delete when secret is removed
     scopes JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at TIMESTAMPTZ,

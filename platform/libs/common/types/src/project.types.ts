@@ -7,6 +7,7 @@ export enum ProjectStatus {
   PROVISIONING = 'provisioning',
   ACTIVE = 'active',
   SUSPENDED = 'suspended',
+  FAILED = 'failed',
   DELETED = 'deleted',
 }
 

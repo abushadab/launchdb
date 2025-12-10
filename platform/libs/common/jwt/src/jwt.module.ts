@@ -14,14 +14,22 @@ import { JwtService } from './jwt.service';
     NestJwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('platformJwtSecret') || config.get<string>('JWT_SECRET'),
-        signOptions: {
-          // NOTE: expiresIn removed - we always set exp explicitly in claims
-          // Having a default expiresIn causes "exp already set" conflicts
-          algorithm: 'HS256',
-        },
-      }),
+      useFactory: (config: ConfigService) => {
+        const secret = config.get<string>('platformJwtSecret') || config.get<string>('JWT_SECRET');
+
+        if (!secret) {
+          throw new Error('JWT secret is required. Set platformJwtSecret or JWT_SECRET in environment');
+        }
+
+        return {
+          secret,
+          signOptions: {
+            // NOTE: expiresIn removed - we always set exp explicitly in claims
+            // Having a default expiresIn causes "exp already set" conflicts
+            algorithm: 'HS256',
+          },
+        };
+      },
     }),
   ],
   providers: [JwtService],

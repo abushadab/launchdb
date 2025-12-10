@@ -42,6 +42,12 @@ export class SignedUrlService implements OnModuleDestroy {
   async generateSignedUrl(params: SignedUrlParams): Promise<string> {
     const { projectId, bucket, path: filePath, expiresIn } = params;
 
+    // Validate baseUrl before persisting token (fail-fast)
+    const baseUrl = this.configService.get<string>('baseUrl');
+    if (!baseUrl) {
+      throw new Error('baseUrl configuration is required for signed URLs');
+    }
+
     // Generate random token
     const token = this.tokenHashService.generateToken();
     const tokenHash = this.tokenHashService.hash(token);
@@ -58,10 +64,6 @@ export class SignedUrlService implements OnModuleDestroy {
     );
 
     // Build signed URL
-    const baseUrl = this.configService.get<string>('baseUrl');
-    if (!baseUrl) {
-      throw new Error('baseUrl configuration is required for signed URLs');
-    }
     const signedUrl = `${baseUrl}/storage/${projectId}/${bucket}/${filePath}?token=${token}`;
 
     this.logger.debug(

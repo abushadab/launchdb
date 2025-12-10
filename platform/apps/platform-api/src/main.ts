@@ -40,4 +40,8 @@ async function bootstrap() {
   logger.log(`Platform API listening on port ${port}`);
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  const logger = new Logger('Bootstrap');
+  logger.error('Failed to start Platform API', error.stack);
+  process.exit(1);
+});
