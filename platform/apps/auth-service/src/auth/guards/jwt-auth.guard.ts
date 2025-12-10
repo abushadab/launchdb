@@ -46,6 +46,21 @@ export class JwtAuthGuard implements CanActivate {
       // Decode and verify JWT with project-specific secret
       const payload = this.jwtService.decode(token, config.jwtSecret);
 
+      // Validate payload structure
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        typeof payload.user_id !== 'string' ||
+        typeof payload.project_id !== 'string' ||
+        typeof payload.role !== 'string' ||
+        !payload.user_id ||
+        !payload.project_id ||
+        !payload.role
+      ) {
+        this.logger.error('JWT payload validation failed: invalid structure');
+        throw new UnauthorizedException('Invalid token payload');
+      }
+
       // Verify project_id in JWT matches request path
       if (payload.project_id !== projectId) {
         this.logger.warn(

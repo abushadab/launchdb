@@ -109,7 +109,7 @@ export class MigrationsService {
       ? 'failed'
       : appliedCount > 0
       ? 'success'
-      : 'partial';
+      : 'no_changes';
 
     this.logger.log(
       `Migrations complete for ${projectId}: ${appliedCount} applied, ${skippedCount} skipped, ${totalDuration}ms`,
@@ -163,6 +163,9 @@ export class MigrationsService {
 
     try {
       await client.query('BEGIN');
+
+      // Set statement timeout to prevent indefinite hanging (5 minutes)
+      await client.query('SET LOCAL statement_timeout = 300000');
 
       // Execute SQL
       await client.query(migration.sql);
@@ -267,7 +270,12 @@ export class MigrationsService {
       }
 
       // Parse admin DSN and replace database name
-      const url = new URL(adminDsn);
+      let url: URL;
+      try {
+        url = new URL(adminDsn);
+      } catch (error) {
+        throw new Error(`Invalid ADMIN_DB_DSN format: ${error.message}`);
+      }
       url.pathname = `/${dbName}`;
 
       const projectDsn = url.toString();

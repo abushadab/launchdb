@@ -55,9 +55,7 @@ export class PostgRestProxyController {
       }
 
       if (project.status !== 'active') {
-        throw new ForbiddenException(
-          `Project not accessible (status: ${project.status})`,
-        );
+        throw new ForbiddenException('Project not accessible');
       }
     } catch (error) {
       if (

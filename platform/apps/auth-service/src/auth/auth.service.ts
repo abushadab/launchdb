@@ -26,6 +26,8 @@ import { UserResponseDto } from './dto/user.dto';
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly projectPools = new Map<string, Pool>();
+  private readonly poolAccessTimes = new Map<string, number>();
+  private readonly MAX_POOLS = 100; // LRU eviction limit to prevent unbounded growth
 
   // Token TTLs per interfaces.md §1
   private readonly ACCESS_TOKEN_TTL = 15 * 60; // 15 minutes
@@ -301,21 +303,35 @@ export class AuthService {
     const refreshToken = this.generateRefreshToken();
     const tokenHash = this.tokenHashService.hash(refreshToken);
 
-    // Create session
+    // Create session and refresh token atomically
     const sessionId = this.generateSessionId();
-    await pool.query(
-      `INSERT INTO auth.sessions (id, user_id, created_at, last_active)
-       VALUES ($1, $2, now(), now())`,
-      [sessionId, userId],
-    );
-
-    // Create refresh token
     const expiresAt = new Date(Date.now() + this.REFRESH_TOKEN_TTL * 1000);
-    await pool.query(
-      `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, now(), now())`,
-      [sessionId, userId, tokenHash, expiresAt],
-    );
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Create session
+      await client.query(
+        `INSERT INTO auth.sessions (id, user_id, created_at, last_active)
+         VALUES ($1, $2, now(), now())`,
+        [sessionId, userId],
+      );
+
+      // Create refresh token
+      await client.query(
+        `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, now(), now())`,
+        [sessionId, userId, tokenHash, expiresAt],
+      );
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     return { accessToken, refreshToken };
   }
@@ -324,7 +340,15 @@ export class AuthService {
    * Get or create pool for project database
    */
   private getProjectPool(projectId: string, config: any): Pool {
+    // Update access time for LRU tracking
+    this.poolAccessTimes.set(projectId, Date.now());
+
     if (!this.projectPools.has(projectId)) {
+      // Evict LRU pool if at capacity
+      if (this.projectPools.size >= this.MAX_POOLS) {
+        this.evictLruPool();
+      }
+
       const host = this.configService.get<string>('projectsDbHost');
       const port = this.configService.get<number>('projectsDbPort');
       const authenticatorRole = `${projectId}_authenticator`;
@@ -347,6 +371,38 @@ export class AuthService {
     }
 
     return this.projectPools.get(projectId)!;
+  }
+
+  /**
+   * Evict least recently used pool to prevent unbounded growth
+   */
+  private evictLruPool(): void {
+    let lruProjectId: string | null = null;
+    let oldestAccessTime = Infinity;
+
+    // Find the least recently used pool
+    for (const [projectId, accessTime] of this.poolAccessTimes.entries()) {
+      if (accessTime < oldestAccessTime) {
+        oldestAccessTime = accessTime;
+        lruProjectId = projectId;
+      }
+    }
+
+    if (lruProjectId) {
+      const pool = this.projectPools.get(lruProjectId);
+      if (pool) {
+        // Close pool gracefully (async, but don't block)
+        pool.end().catch((err) => {
+          this.logger.error(
+            `Error closing pool for project ${lruProjectId}: ${err.message}`,
+          );
+        });
+      }
+
+      this.projectPools.delete(lruProjectId);
+      this.poolAccessTimes.delete(lruProjectId);
+      this.logger.log(`Evicted LRU pool for project ${lruProjectId}`);
+    }
   }
 
   /**

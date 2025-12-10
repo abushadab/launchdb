@@ -4,7 +4,7 @@
  * Per interfaces.md §6
  */
 
-import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '@launchdb/common/database';
 import { CryptoService } from '@launchdb/common/crypto';
@@ -17,7 +17,7 @@ import { Pool } from 'pg';
 import { randomBytes } from 'crypto';
 
 @Injectable()
-export class StorageService {
+export class StorageService implements OnModuleDestroy {
   private readonly logger = new Logger(StorageService.name);
   private readonly projectPools = new Map<string, Pool>();
 
@@ -28,6 +28,14 @@ export class StorageService {
     private diskStorageService: DiskStorageService,
     private signedUrlService: SignedUrlService,
   ) {}
+
+  async onModuleDestroy() {
+    for (const [projectId, pool] of this.projectPools.entries()) {
+      await pool.end();
+      this.logger.log(`Closed connection pool for project ${projectId}`);
+    }
+    this.projectPools.clear();
+  }
 
   /**
    * Upload file
@@ -246,12 +254,20 @@ export class StorageService {
         [projectId],
       );
 
+      if (!project) {
+        throw new NotFoundException('Project not found');
+      }
+
       // Get encrypted db_password
       const secret = await this.databaseService.queryOne(
         `SELECT encrypted_value FROM platform.secrets
          WHERE project_id = $1 AND secret_type = 'db_password'`,
         [projectId],
       );
+
+      if (!secret) {
+        throw new NotFoundException('Project database password not found');
+      }
 
       // secret.encrypted_value is already a Buffer (bytea from Postgres)
       const dbPassword = this.cryptoService.decrypt(secret.encrypted_value);

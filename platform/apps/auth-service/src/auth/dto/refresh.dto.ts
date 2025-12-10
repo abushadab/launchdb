@@ -3,10 +3,11 @@
  * Per interfaces.md §3
  */
 
-import { IsString } from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
 
 export class RefreshDto {
   @IsString()
+  @IsNotEmpty()
   refresh_token: string;
 }
 

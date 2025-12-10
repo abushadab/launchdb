@@ -47,6 +47,7 @@ export class DiskStorageService {
 
     await new Promise<void>((resolve, reject) => {
       stream.pipe(writeStream);
+      stream.on('error', (err) => reject(err)); // Handle input stream errors
       writeStream.on('finish', () => resolve());
       writeStream.on('error', (err) => reject(err));
     });

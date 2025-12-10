@@ -170,14 +170,27 @@ export class ProjectCreatorService {
       { type: 'db_password', value: secrets.dbPassword },
     ];
 
-    for (const secret of secretsToStore) {
-      const encrypted = this.cryptoService.encrypt(secret.value);
+    // Use transaction to ensure atomicity
+    const client = await this.databaseService.getPlatformPool().connect();
+    try {
+      await client.query('BEGIN');
 
-      await this.databaseService.query(
-        `INSERT INTO platform.secrets (project_id, secret_type, encrypted_value)
-         VALUES ($1, $2, $3)`,
-        [projectId, secret.type, encrypted],
-      );
+      for (const secret of secretsToStore) {
+        const encrypted = this.cryptoService.encrypt(secret.value);
+
+        await client.query(
+          `INSERT INTO platform.secrets (project_id, secret_type, encrypted_value)
+           VALUES ($1, $2, $3)`,
+          [projectId, secret.type, encrypted],
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
   }
 
