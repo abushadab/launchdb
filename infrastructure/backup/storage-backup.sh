@@ -86,6 +86,12 @@ if [ "$RETENTION_DAYS" -gt 0 ]; then
     REMOTE_HOST="${RSYNC_DEST%%:*}"
     REMOTE_PATH="${RSYNC_DEST#*:}"
 
+    # Validate REMOTE_PATH to prevent command injection
+    # Allow alphanumeric, slash, dot, underscore, hyphen only
+    if ! [[ "$REMOTE_PATH" =~ ^[a-zA-Z0-9/_.-]+$ ]]; then
+        error_exit "Invalid REMOTE_PATH format: $REMOTE_PATH (only alphanumeric, /, _, ., - allowed)"
+    fi
+
     # Run cleanup on remote
     # Use accept-new instead of no for better security (prevents MITM attacks on key changes)
     if [ -f "$RSYNC_SSH_KEY_PATH" ]; then

@@ -2,6 +2,8 @@
 # Add pgbouncer_auth trust rule to pg_hba.conf
 # This must run AFTER PostgreSQL initializes the data directory
 
+set -e  # Exit on any error to prevent silent failures
+
 PG_HBA="$PGDATA/pg_hba.conf"
 
 echo "=== Configuring pg_hba.conf for PgBouncer auth_query ==="

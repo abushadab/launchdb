@@ -170,7 +170,7 @@ sync_to_remote() {
     if [ -n "${RSYNC_SSH_KEY_PATH:-}" ] && [ -f "${RSYNC_SSH_KEY_PATH}" ]; then
         # Use accept-new instead of no for better security (prevents MITM attacks on key changes)
         if rsync -avz --delete \
-            -e "ssh -i ${RSYNC_SSH_KEY_PATH} -o StrictHostKeyChecking=accept-new" \
+            -e "ssh -i \"${RSYNC_SSH_KEY_PATH}\" -o StrictHostKeyChecking=accept-new" \
             "${BACKUP_DIR}/" "${RSYNC_DEST}/" 2>>"${LOG_FILE}"; then
             log "Remote sync completed successfully"
         else

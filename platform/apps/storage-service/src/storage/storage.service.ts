@@ -20,6 +20,8 @@ import { randomBytes } from 'crypto';
 export class StorageService implements OnModuleDestroy {
   private readonly logger = new Logger(StorageService.name);
   private readonly projectPools = new Map<string, Pool>();
+  private readonly poolAccessTimes = new Map<string, number>();
+  private readonly MAX_POOLS = 100; // LRU eviction limit to prevent unbounded growth
 
   constructor(
     private configService: ConfigService,
@@ -35,6 +37,7 @@ export class StorageService implements OnModuleDestroy {
       this.logger.log(`Closed connection pool for project ${projectId}`);
     }
     this.projectPools.clear();
+    this.poolAccessTimes.clear();
   }
 
   /**
@@ -248,7 +251,15 @@ export class StorageService implements OnModuleDestroy {
    * Get or create pool for project database
    */
   private async getProjectPool(projectId: string): Promise<Pool> {
+    // Update access time for LRU tracking
+    this.poolAccessTimes.set(projectId, Date.now());
+
     if (!this.projectPools.has(projectId)) {
+      // Evict LRU pool if at capacity
+      if (this.projectPools.size >= this.MAX_POOLS) {
+        this.evictLruPool();
+      }
+
       const project = await this.databaseService.queryOne(
         'SELECT db_name FROM platform.projects WHERE id = $1',
         [projectId],
@@ -310,5 +321,37 @@ export class StorageService implements OnModuleDestroy {
       bytes.slice(8, 10).toString('hex'),
       bytes.slice(10, 16).toString('hex'),
     ].join('-');
+  }
+
+  /**
+   * Evict least recently used pool to prevent unbounded growth
+   */
+  private evictLruPool(): void {
+    let lruProjectId: string | null = null;
+    let oldestAccessTime = Infinity;
+
+    // Find the least recently used pool
+    for (const [projectId, accessTime] of this.poolAccessTimes.entries()) {
+      if (accessTime < oldestAccessTime) {
+        oldestAccessTime = accessTime;
+        lruProjectId = projectId;
+      }
+    }
+
+    if (lruProjectId) {
+      const pool = this.projectPools.get(lruProjectId);
+      if (pool) {
+        // Close pool gracefully (async, but don't block)
+        pool.end().catch((err) => {
+          this.logger.error(
+            `Error closing pool for project ${lruProjectId}: ${err.message}`,
+          );
+        });
+      }
+
+      this.projectPools.delete(lruProjectId);
+      this.poolAccessTimes.delete(lruProjectId);
+      this.logger.log(`Evicted LRU pool for project ${lruProjectId}`);
+    }
   }
 }
