@@ -262,26 +262,29 @@ fi
 
 log_section "CORS Configuration"
 
-echo "Enter your frontend domain for CORS (or press Enter for '*' - dev only):"
+echo "Enter your frontend domain for CORS (REQUIRED):"
 echo "  Examples: https://app.yourdomain.com, http://localhost:3000"
-echo "  Note: '*' allows all origins (insecure for production)"
+echo "  Note: Wildcard '*' is NOT recommended (security risk)"
 echo ""
 
 while true; do
     read -p "CORS_ORIGIN: " CORS_INPUT
 
     if [ -z "$CORS_INPUT" ]; then
-        CORS_ORIGIN="*"
-        log_warn "Using CORS_ORIGIN=* (all origins allowed)"
-        break
+        log_error "CORS_ORIGIN is required. Please enter a valid origin."
+        continue
     fi
 
     if validate_cors_origin "$CORS_INPUT"; then
         CORS_ORIGIN="$CORS_INPUT"
-        log_success "CORS_ORIGIN set to: $CORS_ORIGIN"
+        if [ "$CORS_ORIGIN" = "*" ]; then
+            log_warn "Using CORS_ORIGIN=* (all origins allowed - not recommended)"
+        else
+            log_success "CORS_ORIGIN set to: $CORS_ORIGIN"
+        fi
         break
     else
-        log_error "Invalid CORS origin format. Use '*' or 'https://domain.com'"
+        log_error "Invalid CORS origin format. Use 'https://domain.com' or 'http://localhost:3000'"
     fi
 done
 
@@ -429,10 +432,13 @@ elif [ "$LAUNCHDB_VERSION" = "v0.1.0" ]; then
         exit 1
     fi
 else
-    # Other tagged versions
+    # Other tagged versions - SHA256 required for all releases
     DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/archive/refs/tags/${LAUNCHDB_VERSION}.tar.gz"
     if [ -z "$LAUNCHDB_SHA256" ]; then
-        log_warn "Installing without SHA256 verification (not recommended for production)"
+        log_error "SHA256 verification is required for tagged releases"
+        log_error "Get the hash from: https://github.com/${GITHUB_REPO}/releases/tag/${LAUNCHDB_VERSION}"
+        log_error "Install with: LAUNCHDB_SHA256=<hash> curl -fsSL https://launchdb.io/install.sh | sudo bash"
+        exit 1
     fi
 fi
 

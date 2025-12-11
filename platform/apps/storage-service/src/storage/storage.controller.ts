@@ -14,6 +14,7 @@ import {
   Query,
   UploadedFile,
   UseInterceptors,
+  UseGuards,
   StreamableFile,
   HttpCode,
   HttpStatus,
@@ -26,8 +27,10 @@ import { Readable } from 'stream';
 import { StorageService } from './storage.service';
 import { UploadQueryDto, UploadResponseDto } from './dto/upload.dto';
 import { CreateSignedUrlDto, SignedUrlResponseDto, DeleteResponseDto } from './dto/signed-url.dto';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 
 @Controller('storage/:projectId')
+@UseGuards(JwtAuthGuard)
 export class StorageController {
   constructor(private storageService: StorageService) {}
 
