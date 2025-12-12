@@ -22,7 +22,8 @@
       "@launchdb/common/jwt": ["libs/common/jwt/src"],
       "@launchdb/common/database": ["libs/common/database/src"],
       "@launchdb/common/config": ["libs/common/config/src"],
-      "@launchdb/common/types": ["libs/common/types/src"]
+      "@launchdb/common/types": ["libs/common/types/src"],
+      "@launchdb/common/errors": ["libs/common/errors/src"]
     }
   }
 }
