@@ -4,7 +4,7 @@
 
 ⚠️ **Security Notice:** This service requires Docker socket access and runs as root.
 
-### Current Architecture (v0.1.8)
+### Current Architecture (v0.1.9)
 - Requires: `/var/run/docker.sock` mounted
 - Runs as: `root` user
 - Risk: Container escape vector if service is compromised
@@ -14,7 +14,7 @@
 - Run as non-root user with Docker group permissions
 - Implement principle of least privilege
 
-### Mitigation for v0.1.8
+### Mitigation for v0.1.9
 - Keep postgrest-manager on internal Docker network only
 - Do not expose to internet
 - Regular security updates
