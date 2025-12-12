@@ -4,19 +4,14 @@
  * Per interfaces.md §3
  */
 
-import {
-  Injectable,
-  Logger,
-  ConflictException,
-  UnauthorizedException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 import { randomBytes } from 'crypto';
 import { PasswordService, TokenHashService } from '@launchdb/common/crypto';
 import { JwtService as CustomJwtService, JwtRole } from '@launchdb/common/jwt';
 import { withJwtClaimsTx } from '@launchdb/common/database';
+import { ERRORS } from '@launchdb/common/errors';
 import { ProjectConfigService } from './project-config.service';
 import { SignupDto, SignupResponseDto } from './dto/signup.dto';
 import { LoginDto, LoginResponseDto } from './dto/login.dto';
@@ -72,7 +67,7 @@ export class AuthService {
       } catch (error) {
         if (error.code === '23505') {
           // Unique violation
-          throw new ConflictException('Email already registered');
+          throw ERRORS.UserAlreadyExists(dto.email);
         }
         throw error;
       }
@@ -117,7 +112,7 @@ export class AuthService {
       );
 
       if (user.rows.length === 0) {
-        throw new UnauthorizedException('Invalid credentials');
+        throw ERRORS.InvalidCredentials();
       }
 
       const userData = user.rows[0];
@@ -129,7 +124,7 @@ export class AuthService {
       );
 
       if (!isValid) {
-        throw new UnauthorizedException('Invalid credentials');
+        throw ERRORS.InvalidCredentials();
       }
 
       // Create session (within same client for consistency)
@@ -184,7 +179,7 @@ export class AuthService {
       );
 
       if (result.rows.length === 0) {
-        throw new UnauthorizedException('Invalid or expired refresh token');
+        throw ERRORS.TokenInvalid();
       }
 
       const tokenData = result.rows[0];
@@ -273,7 +268,7 @@ export class AuthService {
       );
 
       if (result.rows.length === 0) {
-        throw new NotFoundException('User not found');
+        throw ERRORS.UserNotFound(userId);
       }
 
       const user = result.rows[0];

@@ -9,7 +9,6 @@ import { DatabaseService, ProjectDatabaseService } from '@launchdb/common/databa
 import { CryptoService } from '@launchdb/common/crypto';
 import { JwtService, JwtRole } from '@launchdb/common/jwt';
 import { ProjectStatus } from '@launchdb/common/types';
-import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 import axios from 'axios';
 import { PostgRestService } from '../postgrest/postgrest.service';
@@ -238,7 +237,7 @@ export class ProjectCreatorService {
   private async step7GeneratePostgRESTConfig(
     projectId: string,
     secrets: any,
-    dbInfo: any,
+    _dbInfo: any,
   ): Promise<void> {
     this.logger.log(`Step 7: PostgREST config generation and container spawn for ${projectId}`);
 
