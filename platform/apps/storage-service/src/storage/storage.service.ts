@@ -4,10 +4,11 @@
  * Per interfaces.md §6
  */
 
-import { Injectable, Logger, NotFoundException, UnauthorizedException, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService, withJwtClaimsTx } from '@launchdb/common/database';
 import { CryptoService } from '@launchdb/common/crypto';
+import { ERRORS } from '@launchdb/common/errors';
 import { DiskStorageService } from './disk-storage.service';
 import { SignedUrlService } from './signed-url.service';
 import { UploadResponseDto } from './dto/upload.dto';
@@ -121,7 +122,7 @@ export class StorageService implements OnModuleDestroy {
       );
 
       if (result.rows.length === 0) {
-        throw new NotFoundException(`File not found: ${path}`);
+        throw ERRORS.ObjectNotFound(path);
       }
       return result.rows[0];
     });
@@ -183,7 +184,7 @@ export class StorageService implements OnModuleDestroy {
     // Check if file exists
     const exists = await this.diskStorageService.fileExists(projectId, bucket, path);
     if (!exists) {
-      throw new NotFoundException(`File not found: ${path}`);
+      throw ERRORS.ObjectNotFound(path);
     }
 
     // Generate signed URL
@@ -217,7 +218,7 @@ export class StorageService implements OnModuleDestroy {
     );
 
     if (!validation.valid) {
-      throw new UnauthorizedException('Invalid or expired signed URL');
+      throw ERRORS.SignedUrlExpired();
     }
 
     // Download file (no project active check needed - token is already validated)
@@ -244,11 +245,11 @@ export class StorageService implements OnModuleDestroy {
     );
 
     if (!project) {
-      throw new NotFoundException('Project not found');
+      throw ERRORS.ProjectNotFound(projectId);
     }
 
     if (project.status !== 'active') {
-      throw new UnauthorizedException('Project not active');
+      throw ERRORS.ValidationError('Project not active', projectId);
     }
   }
 
@@ -271,7 +272,7 @@ export class StorageService implements OnModuleDestroy {
       );
 
       if (!project) {
-        throw new NotFoundException('Project not found');
+        throw ERRORS.ProjectNotFound(projectId);
       }
 
       // Get encrypted db_password
@@ -282,7 +283,7 @@ export class StorageService implements OnModuleDestroy {
       );
 
       if (!secret) {
-        throw new NotFoundException('Project database password not found');
+        throw ERRORS.InternalError('Project database password not found');
       }
 
       // secret.encrypted_value is already a Buffer (bytea from Postgres)

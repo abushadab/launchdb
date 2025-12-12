@@ -3,9 +3,10 @@
  * Project CRUD operations and orchestration
  */
 
-import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '@launchdb/common/database';
 import { CryptoService } from '@launchdb/common/crypto';
+import { ERRORS } from '@launchdb/common/errors';
 import { ProjectCreatorService } from './project-creator.service';
 import { PostgRestService } from '../postgrest/postgrest.service';
 import { PostgRestManagerService } from '../postgrest/postgrest-manager.service';
@@ -74,11 +75,11 @@ export class ProjectsService {
     );
 
     if (!project) {
-      throw new NotFoundException('Project not found');
+      throw ERRORS.ProjectNotFound(projectId);
     }
 
     if (project.owner_id !== ownerId) {
-      throw new ForbiddenException('Access denied');
+      throw ERRORS.AccessDenied(projectId);
     }
 
     return project;
@@ -221,7 +222,7 @@ export class ProjectsService {
     );
 
     if (!row) {
-      throw new Error(`Secret not found: ${secretType}`);
+      throw ERRORS.InternalError(`Secret not found: ${secretType}`);
     }
 
     return this.cryptoService.decrypt(row.encrypted_value);

@@ -6,6 +6,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool, PoolClient, QueryResult } from 'pg';
+import retry from 'async-retry';
 
 export interface ProjectDbConfig {
   projectId: string;
@@ -59,25 +60,67 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Execute query on platform database
+   * Execute query on platform database with retry logic
    */
   async query(sql: string, params?: any[]): Promise<QueryResult> {
-    return this.platformPool.query(sql, params);
+    return retry(
+      async () => {
+        return this.platformPool.query(sql, params);
+      },
+      {
+        retries: 5,
+        minTimeout: 1000, // 1 second
+        maxTimeout: 10000, // 10 seconds
+        onRetry: (error, attempt) => {
+          this.logger.warn(
+            `Query retry attempt ${attempt}/5: ${(error as Error).message}`,
+          );
+        },
+      },
+    );
   }
 
   /**
-   * Execute query and return single row
+   * Execute query and return single row with retry logic
    */
   async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
-    const result = await this.platformPool.query(sql, params);
+    const result = await retry(
+      async () => {
+        return this.platformPool.query(sql, params);
+      },
+      {
+        retries: 5,
+        minTimeout: 1000,
+        maxTimeout: 10000,
+        onRetry: (error, attempt) => {
+          this.logger.warn(
+            `QueryOne retry attempt ${attempt}/5: ${(error as Error).message}`,
+          );
+        },
+      },
+    );
     return result.rows[0] || null;
   }
 
   /**
-   * Execute query and return all rows
+   * Execute query and return all rows with retry logic
    */
   async queryMany<T = any>(sql: string, params?: any[]): Promise<T[]> {
-    const result = await this.platformPool.query(sql, params);
+    const result = await retry(
+      async () => {
+        return this.platformPool.query(sql, params);
+      },
+      {
+        retries: 5,
+        minTimeout: 1000,
+        maxTimeout: 10000,
+        onRetry: (error, attempt) => {
+          this.logger.warn(
+            `QueryMany retry attempt ${attempt}/5: ${(error as Error).message}`,
+          );
+        },
+      },
+    );
     return result.rows;
   }
 
