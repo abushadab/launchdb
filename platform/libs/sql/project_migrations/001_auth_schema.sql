@@ -102,13 +102,32 @@ CREATE TRIGGER update_sessions_updated_at
     EXECUTE FUNCTION auth.update_updated_at_column();
 
 -- Helper functions for RLS
+-- Handle empty/null jwt.claims gracefully (returns NULL instead of erroring)
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
-$$ LANGUAGE sql STABLE;
+DECLARE
+    claims text := current_setting('request.jwt.claims', true);
+BEGIN
+    IF claims IS NULL OR claims = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN NULLIF(claims::json->>'sub', '')::uuid;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'role', '')::text;
-$$ LANGUAGE sql STABLE;
+DECLARE
+    claims text := current_setting('request.jwt.claims', true);
+BEGIN
+    IF claims IS NULL OR claims = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN NULLIF(claims::json->>'role', '');
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 -- RLS policies (strict by default)
 ALTER TABLE auth.users ENABLE ROW LEVEL SECURITY;

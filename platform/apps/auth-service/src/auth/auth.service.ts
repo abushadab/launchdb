@@ -63,6 +63,8 @@ export class AuthService {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // Set service_role for RLS bypass
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
 
       // Insert user
       try {
@@ -116,45 +118,51 @@ export class AuthService {
     const config = await this.projectConfigService.getProjectConfig(projectId);
     const pool = this.getProjectPool(projectId, config);
 
-    // Get user
-    const user = await pool.query(
-      `SELECT id, email, password_hash
-       FROM auth.users
-       WHERE email = $1`,
-      [dto.email],
-    );
+    // Get user (use service_role for RLS bypass)
+    const client = await pool.connect();
+    try {
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+      const user = await client.query(
+        `SELECT id, email, password_hash
+         FROM auth.users
+         WHERE email = $1`,
+        [dto.email],
+      );
 
-    if (user.rows.length === 0) {
-      throw new UnauthorizedException('Invalid credentials');
+      if (user.rows.length === 0) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      const userData = user.rows[0];
+
+      // Verify password
+      const isValid = await this.passwordService.verify(
+        userData.password_hash,
+        dto.password,
+      );
+
+      if (!isValid) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      // Create session (within same client for consistency)
+      const { accessToken, refreshToken } = await this.createSessionWithClient(
+        client,
+        userData.id,
+        projectId,
+        config.jwtSecret,
+      );
+
+      return {
+        user_id: userData.id,
+        email: userData.email,
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_in: this.ACCESS_TOKEN_TTL,
+      };
+    } finally {
+      client.release();
     }
-
-    const userData = user.rows[0];
-
-    // Verify password
-    const isValid = await this.passwordService.verify(
-      userData.password_hash,
-      dto.password,
-    );
-
-    if (!isValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    // Create session
-    const { accessToken, refreshToken } = await this.createSession(
-      pool,
-      userData.id,
-      projectId,
-      config.jwtSecret,
-    );
-
-    return {
-      user_id: userData.id,
-      email: userData.email,
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      expires_in: this.ACCESS_TOKEN_TTL,
-    };
   }
 
   /**
@@ -173,6 +181,8 @@ export class AuthService {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // Set service_role for RLS bypass
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
 
       // Hash refresh token for lookup
       const tokenHash = this.tokenHashService.hash(dto.refresh_token);
@@ -183,7 +193,7 @@ export class AuthService {
          FROM auth.refresh_tokens rt
          JOIN auth.sessions s ON s.id = rt.session_id
          WHERE rt.token_hash = $1
-           AND rt.revoked = false
+           AND rt.revoked_at IS NULL
            AND rt.expires_at > now()
          FOR UPDATE OF rt`,
         [tokenHash],
@@ -207,26 +217,26 @@ export class AuthService {
       const newRefreshToken = this.generateRefreshToken();
       const newTokenHash = this.tokenHashService.hash(newRefreshToken);
 
-      // Revoke old refresh token
+      // Revoke old refresh token (revoked_at not revoked)
       await client.query(
         `UPDATE auth.refresh_tokens
-         SET revoked = true, updated_at = now()
+         SET revoked_at = now()
          WHERE id = $1`,
         [tokenData.id],
       );
 
-      // Create new refresh token
+      // Create new refresh token (no updated_at column)
       const expiresAt = new Date(Date.now() + this.REFRESH_TOKEN_TTL * 1000);
       await client.query(
-        `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, now(), now())`,
+        `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at)
+         VALUES ($1, $2, $3, $4, now())`,
         [tokenData.session_id, tokenData.user_id, newTokenHash, expiresAt],
       );
 
-      // Update session last_active
+      // Update session last_activity_at (not last_active)
       await client.query(
         `UPDATE auth.sessions
-         SET last_active = now()
+         SET last_activity_at = now()
          WHERE id = $1`,
         [tokenData.session_id],
       );
@@ -257,12 +267,18 @@ export class AuthService {
 
     const tokenHash = this.tokenHashService.hash(refreshToken);
 
-    await pool.query(
-      `UPDATE auth.refresh_tokens
-       SET revoked = true, updated_at = now()
-       WHERE token_hash = $1`,
-      [tokenHash],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+      await client.query(
+        `UPDATE auth.refresh_tokens
+         SET revoked_at = now()
+         WHERE token_hash = $1`,
+        [tokenHash],
+      );
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -275,24 +291,30 @@ export class AuthService {
     const config = await this.projectConfigService.getProjectConfig(projectId);
     const pool = this.getProjectPool(projectId, config);
 
-    const result = await pool.query(
-      `SELECT id, email, created_at
-       FROM auth.users
-       WHERE id = $1`,
-      [userId],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+      const result = await client.query(
+        `SELECT id, email, created_at
+         FROM auth.users
+         WHERE id = $1`,
+        [userId],
+      );
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException('User not found');
+      if (result.rows.length === 0) {
+        throw new NotFoundException('User not found');
+      }
+
+      const user = result.rows[0];
+
+      return {
+        user_id: user.id,
+        email: user.email,
+        created_at: user.created_at,
+      };
+    } finally {
+      client.release();
     }
-
-    const user = result.rows[0];
-
-    return {
-      user_id: user.id,
-      email: user.email,
-      created_at: user.created_at,
-    };
   }
 
   /**
@@ -323,18 +345,21 @@ export class AuthService {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // Set service_role for RLS bypass
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
 
-      // Create session
+      // Create session (expires_at = refresh token TTL, last_activity_at = now)
+      const sessionExpiresAt = new Date(Date.now() + this.REFRESH_TOKEN_TTL * 1000);
       await client.query(
-        `INSERT INTO auth.sessions (id, user_id, created_at, last_active)
-         VALUES ($1, $2, now(), now())`,
-        [sessionId, userId],
+        `INSERT INTO auth.sessions (id, user_id, expires_at, created_at, updated_at, last_activity_at)
+         VALUES ($1, $2, $3, now(), now(), now())`,
+        [sessionId, userId, sessionExpiresAt],
       );
 
       // Create refresh token
       await client.query(
-        `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, now(), now())`,
+        `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at)
+         VALUES ($1, $2, $3, $4, now())`,
         [sessionId, userId, tokenHash, expiresAt],
       );
 
@@ -373,18 +398,19 @@ export class AuthService {
     // Create session and refresh token (no transaction - already within one)
     const sessionId = this.generateSessionId();
     const expiresAt = new Date(Date.now() + this.REFRESH_TOKEN_TTL * 1000);
+    const sessionExpiresAt = expiresAt; // Session expires with refresh token
 
-    // Create session
+    // Create session (expires_at required, last_activity_at not last_active)
     await client.query(
-      `INSERT INTO auth.sessions (id, user_id, created_at, last_active)
-       VALUES ($1, $2, now(), now())`,
-      [sessionId, userId],
+      `INSERT INTO auth.sessions (id, user_id, expires_at, created_at, updated_at, last_activity_at)
+       VALUES ($1, $2, $3, now(), now(), now())`,
+      [sessionId, userId, sessionExpiresAt],
     );
 
-    // Create refresh token
+    // Create refresh token (no updated_at column in this table)
     await client.query(
-      `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, now(), now())`,
+      `INSERT INTO auth.refresh_tokens (session_id, user_id, token_hash, expires_at, created_at)
+       VALUES ($1, $2, $3, $4, now())`,
       [sessionId, userId, tokenHash, expiresAt],
     );
 
