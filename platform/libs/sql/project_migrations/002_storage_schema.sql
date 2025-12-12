@@ -44,17 +44,17 @@ CREATE INDEX idx_objects_created_at ON storage.objects(created_at DESC);
 -- Signed URLs / temporary access tokens
 CREATE TABLE storage.signed_urls (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    object_id UUID NOT NULL REFERENCES storage.objects(id) ON DELETE CASCADE,
     token_hash TEXT UNIQUE NOT NULL,  -- SHA-256 hash
+    bucket TEXT NOT NULL,  -- bucket name
+    path TEXT NOT NULL,  -- file path
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL,
-    created_by UUID,  -- auth.users(id)
-    access_count INT NOT NULL DEFAULT 0,
-    max_access_count INT  -- NULL = unlimited
+    used BOOLEAN NOT NULL DEFAULT false,
+    used_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_signed_urls_token_hash ON storage.signed_urls(token_hash);
-CREATE INDEX idx_signed_urls_object_id ON storage.signed_urls(object_id);
+CREATE INDEX idx_signed_urls_bucket_path ON storage.signed_urls(bucket, path);
 CREATE INDEX idx_signed_urls_expires_at ON storage.signed_urls(expires_at);
 
 -- Update timestamp trigger
