@@ -22,8 +22,10 @@ if ! [[ "$PROJECT_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
 fi
 
 CONTAINER_NAME="postgrest-${PROJECT_ID}"
-CONFIG_FILE="/etc/postgrest.conf"
+CONFIG_FILE="/etc/postgrest/projects/${PROJECT_ID}.conf"
 IMAGE="launchdb/postgrest:v1"
+# Volume name for PostgREST configs (created by docker-compose)
+POSTGREST_VOLUME="launchdb_postgrest-projects"
 
 # Auto-detect network name from PgBouncer container (handles Docker Compose project prefix)
 # This ensures PostgREST always joins the same network as PgBouncer
@@ -51,25 +53,8 @@ else
     echo "Detected network from PgBouncer: ${NETWORK}"
 fi
 
-# Paths inside manager container (mounted from host)
+# Config directory inside manager container (mounted from named volume)
 MANAGER_CONFIG_DIR="/etc/postgrest/projects"
-
-# Host paths for Docker daemon (must match docker-compose volume mounts)
-# REQUIRED: HOST_CONFIG_DIR must be set as environment variable
-# No defaults for portability - fail fast if not configured
-if [ -z "$HOST_CONFIG_DIR" ]; then
-    echo "Error: HOST_CONFIG_DIR environment variable is required"
-    echo ""
-    echo "This must point to the absolute path on the Docker host where"
-    echo "PostgREST config files are stored (e.g., /opt/launchdb/postgrest/projects)"
-    echo ""
-    echo "Set this in:"
-    echo "  - docker-compose.yml under postgrest-manager environment"
-    echo "  - .env file: HOST_CONFIG_DIR=/absolute/path/to/postgrest/projects"
-    echo ""
-    echo "Example: HOST_CONFIG_DIR=/opt/launchdb/postgrest/projects"
-    exit 1
-fi
 
 # Check if config file exists (in manager container)
 if [ ! -f "${MANAGER_CONFIG_DIR}/${PROJECT_ID}.conf" ]; then
@@ -78,8 +63,9 @@ if [ ! -f "${MANAGER_CONFIG_DIR}/${PROJECT_ID}.conf" ]; then
     exit 1
 fi
 
-echo "Using host path for Docker daemon:"
-echo "  Config: ${HOST_CONFIG_DIR}/${PROJECT_ID}.conf"
+echo "Using named volume for config:"
+echo "  Volume: ${POSTGREST_VOLUME}"
+echo "  Config: ${CONFIG_FILE}"
 echo "Note: Wrapper script is built into custom launchdb/postgrest:v1 image"
 
 # Check if container already exists
@@ -113,7 +99,7 @@ DOCKER_CMD=(
     --name "${CONTAINER_NAME}"
     --network "${NETWORK}"
     --restart unless-stopped
-    -v "${HOST_CONFIG_DIR}/${PROJECT_ID}.conf:${CONFIG_FILE}:ro"
+    -v "${POSTGREST_VOLUME}:/etc/postgrest/projects:ro"
 )
 
 # Add DOMAIN env var if set (for openapi-server-proxy-uri expansion in config)

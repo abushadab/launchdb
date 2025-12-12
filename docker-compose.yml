@@ -153,6 +153,8 @@ services:
       SMTP_FROM: ${SMTP_FROM:-noreply@launchdb.local}
       LOG_LEVEL: info
       CORS_ORIGIN: ${CORS_ORIGIN}
+      JWT_SECRET: ${PLATFORM_JWT_SECRET}
+      platformJwtSecret: ${PLATFORM_JWT_SECRET}
     depends_on:
       pgbouncer:
         condition: service_healthy
@@ -188,6 +190,8 @@ services:
       SIGNED_URL_TTL: 3600
       LOG_LEVEL: info
       CORS_ORIGIN: ${CORS_ORIGIN}
+      JWT_SECRET: ${PLATFORM_JWT_SECRET}
+      platformJwtSecret: ${PLATFORM_JWT_SECRET}
     volumes:
       - storage-data:/var/lib/launchdb/storage
     depends_on:
