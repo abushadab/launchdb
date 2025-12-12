@@ -10,7 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService } from '@launchdb/common/jwt';
 import { DatabaseService } from '@launchdb/common/database';
 import { PasswordService } from '@launchdb/common/crypto';
 import { v4 as uuidv4 } from 'uuid';
@@ -103,16 +103,16 @@ export class OwnersService {
     }
 
     // Generate JWT
+    const now = Math.floor(Date.now() / 1000);
     const payload = {
       sub: owner.id,
       email: owner.email,
       type: 'platform',
+      iat: now,
+      exp: now + 604800, // 7 days
     };
 
-    const accessToken = this.jwtService.sign(payload, {
-      secret: this.platformJwtSecret,
-      expiresIn: '7d', // 7 days for platform tokens
-    });
+    const accessToken = this.jwtService.encode(payload as any, this.platformJwtSecret);
 
     this.logger.log(`Owner logged in: ${owner.id}`);
 
@@ -128,9 +128,7 @@ export class OwnersService {
    */
   async verifyToken(token: string): Promise<string> {
     try {
-      const payload = this.jwtService.verify(token, {
-        secret: this.platformJwtSecret,
-      });
+      const payload = this.jwtService.decode(token, this.platformJwtSecret);
       return payload.sub;
     } catch (error) {
       throw new UnauthorizedException('Invalid or expired token');
