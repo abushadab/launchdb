@@ -57,13 +57,24 @@ export class SignedUrlService implements OnModuleDestroy {
     // Calculate expiry
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
-    // Store token in database
+    // Store token in database (with service_role for RLS bypass)
     const pool = await this.getProjectPool(projectId);
-    await pool.query(
-      `INSERT INTO storage.signed_urls (token_hash, bucket, path, expires_at, created_at)
-       VALUES ($1, $2, $3, $4, now())`,
-      [tokenHash, bucket, filePath, expiresAt],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+      await client.query(
+        `INSERT INTO storage.signed_urls (token_hash, bucket, path, expires_at, created_at)
+         VALUES ($1, $2, $3, $4, now())`,
+        [tokenHash, bucket, filePath, expiresAt],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     // Build signed URL
     const signedUrl = `${baseUrl}/storage/${projectId}/${bucket}/${filePath}?token=${token}`;
@@ -92,6 +103,7 @@ export class SignedUrlService implements OnModuleDestroy {
 
       try {
         await client.query('BEGIN');
+        await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
 
         const result = await client.query(
           `SELECT id, bucket, path, expires_at, used
@@ -142,19 +154,32 @@ export class SignedUrlService implements OnModuleDestroy {
    */
   async cleanupExpiredUrls(projectId: string): Promise<number> {
     const pool = await this.getProjectPool(projectId);
+    const client = await pool.connect();
 
-    const result = await pool.query(
-      `DELETE FROM storage.signed_urls
-       WHERE expires_at < now() - interval '1 day'
-       RETURNING id`,
-    );
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
 
-    const deletedCount = result.rowCount;
-    this.logger.log(
-      `Cleaned up ${deletedCount} expired signed URLs for project ${projectId}`,
-    );
+      const result = await client.query(
+        `DELETE FROM storage.signed_urls
+         WHERE expires_at < now() - interval '1 day'
+         RETURNING id`,
+      );
 
-    return deletedCount;
+      await client.query('COMMIT');
+
+      const deletedCount = result.rowCount;
+      this.logger.log(
+        `Cleaned up ${deletedCount} expired signed URLs for project ${projectId}`,
+      );
+
+      return deletedCount ?? 0;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /**

@@ -67,19 +67,31 @@ export class StorageService implements OnModuleDestroy {
     // Generate object ID
     const objectId = this.generateObjectId();
 
-    // Store metadata in database
+    // Store metadata in database (with service_role for RLS bypass)
     const pool = await this.getProjectPool(projectId);
-    const result = await pool.query(
-      `INSERT INTO storage.objects (id, bucket, path, size, content_type, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, now(), now())
-       ON CONFLICT (bucket, path) DO UPDATE
-       SET size = EXCLUDED.size,
-           content_type = EXCLUDED.content_type,
-           updated_at = now()
-       RETURNING id`,
-      [objectId, bucket, path, metadata.size, metadata.contentType],
-    );
-    const actualObjectId = result.rows[0].id;
+    const client = await pool.connect();
+    let actualObjectId: string;
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+      const result = await client.query(
+        `INSERT INTO storage.objects (id, bucket, path, size, content_type, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now(), now())
+         ON CONFLICT (bucket, path) DO UPDATE
+         SET size = EXCLUDED.size,
+             content_type = EXCLUDED.content_type,
+             updated_at = now()
+         RETURNING id`,
+        [objectId, bucket, path, metadata.size, metadata.contentType],
+      );
+      actualObjectId = result.rows[0].id;
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     // Build public URL
     const baseUrl = this.configService.get<string>('baseUrl');
@@ -109,19 +121,30 @@ export class StorageService implements OnModuleDestroy {
     // Verify project is active
     await this.verifyProjectActive(projectId);
 
-    // Check if file exists in database
+    // Check if file exists in database (with service_role for RLS bypass)
     const pool = await this.getProjectPool(projectId);
-    const result = await pool.query(
-      `SELECT id, size, content_type FROM storage.objects
-       WHERE bucket = $1 AND path = $2`,
-      [bucket, path],
-    );
+    const client = await pool.connect();
+    let dbMetadata: any;
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+      const result = await client.query(
+        `SELECT id, size, content_type FROM storage.objects
+         WHERE bucket = $1 AND path = $2`,
+        [bucket, path],
+      );
+      await client.query('COMMIT');
 
-    if (result.rows.length === 0) {
-      throw new NotFoundException(`File not found: ${path}`);
+      if (result.rows.length === 0) {
+        throw new NotFoundException(`File not found: ${path}`);
+      }
+      dbMetadata = result.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const dbMetadata = result.rows[0];
 
     // Read file from disk
     const { stream, metadata } = await this.diskStorageService.readFile(
@@ -153,12 +176,23 @@ export class StorageService implements OnModuleDestroy {
     // Delete from disk
     await this.diskStorageService.deleteFile(projectId, bucket, path);
 
-    // Delete from database
+    // Delete from database (with service_role for RLS bypass)
     const pool = await this.getProjectPool(projectId);
-    await pool.query(
-      `DELETE FROM storage.objects WHERE bucket = $1 AND path = $2`,
-      [bucket, path],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+      await client.query(
+        `DELETE FROM storage.objects WHERE bucket = $1 AND path = $2`,
+        [bucket, path],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /**

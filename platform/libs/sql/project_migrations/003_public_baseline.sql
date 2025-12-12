@@ -6,17 +6,45 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE O
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO authenticated;
 
 -- Helper functions for app developers to use in their RLS policies
+-- Fixed: Handle empty/null jwt.claims gracefully (returns NULL instead of erroring)
 CREATE OR REPLACE FUNCTION public.auth_uid() RETURNS UUID AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
-$$ LANGUAGE sql STABLE;
+DECLARE
+    claims text := current_setting('request.jwt.claims', true);
+BEGIN
+    IF claims IS NULL OR claims = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN NULLIF(claims::json->>'sub', '')::uuid;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 CREATE OR REPLACE FUNCTION public.auth_role() RETURNS TEXT AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'role', '')::text;
-$$ LANGUAGE sql STABLE;
+DECLARE
+    claims text := current_setting('request.jwt.claims', true);
+BEGIN
+    IF claims IS NULL OR claims = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN NULLIF(claims::json->>'role', '');
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 CREATE OR REPLACE FUNCTION public.auth_email() RETURNS TEXT AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'email', '')::text;
-$$ LANGUAGE sql STABLE;
+DECLARE
+    claims text := current_setting('request.jwt.claims', true);
+BEGIN
+    IF claims IS NULL OR claims = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN NULLIF(claims::json->>'email', '');
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Grant basic permissions to project roles
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
