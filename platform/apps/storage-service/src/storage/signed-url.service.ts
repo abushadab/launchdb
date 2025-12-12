@@ -4,10 +4,11 @@
  * Per interfaces.md §6
  */
 
-import { Injectable, Logger, UnauthorizedException, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TokenHashService, CryptoService } from '@launchdb/common/crypto';
 import { DatabaseService, withJwtClaimsTx } from '@launchdb/common/database';
+import { ERRORS } from '@launchdb/common/errors';
 import { Pool } from 'pg';
 
 export interface SignedUrlParams {
@@ -171,8 +172,12 @@ export class SignedUrlService implements OnModuleDestroy {
         [projectId],
       );
 
-      if (!project || project.status !== 'active') {
-        throw new UnauthorizedException('Project not active');
+      if (!project) {
+        throw ERRORS.ProjectNotFound(projectId);
+      }
+
+      if (project.status !== 'active') {
+        throw ERRORS.ValidationError('Project not active', projectId);
       }
 
       // Get db_password from secrets
@@ -183,7 +188,7 @@ export class SignedUrlService implements OnModuleDestroy {
       );
 
       if (!secret) {
-        throw new UnauthorizedException('Project configuration unavailable');
+        throw ERRORS.InternalError('Project configuration unavailable');
       }
 
       // Decrypt db_password (secret.encrypted_value is already a Buffer)

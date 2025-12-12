@@ -3,16 +3,12 @@
  * Handles owner authentication (signup/login)
  */
 
-import {
-  Injectable,
-  Logger,
-  ConflictException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@launchdb/common/jwt';
 import { DatabaseService } from '@launchdb/common/database';
 import { PasswordService } from '@launchdb/common/crypto';
+import { ERRORS } from '@launchdb/common/errors';
 import { v4 as uuidv4 } from 'uuid';
 import {
   SignupOwnerDto,
@@ -63,7 +59,7 @@ export class OwnersService {
     } catch (error) {
       if (error.code === '23505') {
         // Unique constraint violation
-        throw new ConflictException('Email already registered');
+        throw ERRORS.OwnerAlreadyExists(dto.email);
       }
       throw error;
     }
@@ -89,7 +85,7 @@ export class OwnersService {
     );
 
     if (!owner) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw ERRORS.InvalidCredentials();
     }
 
     // Verify password
@@ -99,7 +95,7 @@ export class OwnersService {
     );
 
     if (!isValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw ERRORS.InvalidCredentials();
     }
 
     // Generate JWT
@@ -131,7 +127,7 @@ export class OwnersService {
       const payload = this.jwtService.decode(token, this.platformJwtSecret);
       return payload.sub;
     } catch (error) {
-      throw new UnauthorizedException('Invalid or expired token');
+      throw ERRORS.TokenInvalid();
     }
   }
 }

@@ -27,6 +27,13 @@ export enum ErrorCode {
   ProjectAlreadyExists = 'ProjectAlreadyExists',
   ProjectProvisioningFailed = 'ProjectProvisioningFailed',
 
+  // Owner errors
+  OwnerNotFound = 'OwnerNotFound',
+  OwnerAlreadyExists = 'OwnerAlreadyExists',
+
+  // Access errors
+  AccessDenied = 'AccessDenied',
+
   // General errors
   ValidationError = 'ValidationError',
   InternalError = 'InternalError',
