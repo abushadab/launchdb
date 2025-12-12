@@ -133,22 +133,60 @@ CREATE POLICY signed_urls_service_role_all ON storage.signed_urls
     USING (auth.role() = 'service_role');
 
 -- Helper function (reuse from auth schema)
+-- Fixed: Handle empty/null jwt.claims gracefully
 CREATE OR REPLACE FUNCTION storage.auth_uid() RETURNS UUID AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
-$$ LANGUAGE sql STABLE;
+DECLARE
+    claims text := current_setting('request.jwt.claims', true);
+BEGIN
+    IF claims IS NULL OR claims = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN NULLIF(claims::json->>'sub', '')::uuid;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 CREATE OR REPLACE FUNCTION storage.auth_role() RETURNS TEXT AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'role', '')::text;
-$$ LANGUAGE sql STABLE;
+DECLARE
+    claims text := current_setting('request.jwt.claims', true);
+BEGIN
+    IF claims IS NULL OR claims = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN NULLIF(claims::json->>'role', '');
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Use auth schema functions if they exist
+-- Fixed: Handle empty/null jwt.claims gracefully (returns NULL instead of erroring)
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
-$$ LANGUAGE sql STABLE;
+DECLARE
+    claims text := current_setting('request.jwt.claims', true);
+BEGIN
+    IF claims IS NULL OR claims = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN NULLIF(claims::json->>'sub', '')::uuid;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'role', '')::text;
-$$ LANGUAGE sql STABLE;
+DECLARE
+    claims text := current_setting('request.jwt.claims', true);
+BEGIN
+    IF claims IS NULL OR claims = '' THEN
+        RETURN NULL;
+    END IF;
+    RETURN NULLIF(claims::json->>'role', '');
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Grant permissions to project roles
 GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role;
