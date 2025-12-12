@@ -6,7 +6,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool, PoolClient, QueryResult } from 'pg';
-import retry from 'async-retry';
+import * as retry from 'async-retry';
 
 export interface ProjectDbConfig {
   projectId: string;
