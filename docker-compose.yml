@@ -185,7 +185,10 @@ services:
       PORT: 8003
       PLATFORM_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@pgbouncer:6432/platform
       LAUNCHDB_MASTER_KEY: ${LAUNCHDB_MASTER_KEY}
-      STORAGE_PATH: /var/lib/launchdb/storage
+      STORAGE_BASE_PATH: /var/lib/launchdb/storage
+      BASE_URL: https://${DOMAIN}
+      PROJECTS_DB_HOST: pgbouncer
+      PROJECTS_DB_PORT: 6432
       MAX_FILE_SIZE_MB: 50
       SIGNED_URL_TTL: 3600
       LOG_LEVEL: info
