@@ -407,7 +407,7 @@ log_success "Created $INSTALL_DIR"
 
 log_section "Downloading LaunchDB"
 
-LAUNCHDB_VERSION="${LAUNCHDB_VERSION:-v0.1.5}"
+LAUNCHDB_VERSION="${LAUNCHDB_VERSION:-v0.1.6}"
 GITHUB_REPO="${GITHUB_REPO:-abushadab/launchdb}"
 LAUNCHDB_SHA256="${LAUNCHDB_SHA256:-}"
 
@@ -418,7 +418,7 @@ if [ "$LAUNCHDB_VERSION" = "latest" ]; then
     # Require SHA256 for "latest" (development/main branch)
     if [ -z "$LAUNCHDB_SHA256" ]; then
         log_error "SHA256 verification is required when using LAUNCHDB_VERSION=latest"
-        log_error "Please specify LAUNCHDB_SHA256 or use a specific version tag (e.g., v0.1.5)"
+        log_error "Please specify LAUNCHDB_SHA256 or use a specific version tag (e.g., v0.1.6)"
         exit 1
     fi
     DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/archive/refs/heads/main.tar.gz"

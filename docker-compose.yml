@@ -61,7 +61,7 @@ services:
   # ============================================================
 
   pgbouncer:
-    image: abushadaf/launchdb-pgbouncer:v0.1.5
+    image: abushadaf/launchdb-pgbouncer:v0.1.6
     # build:
     #   context: ./infrastructure/pgbouncer
     #   dockerfile: Dockerfile
@@ -89,7 +89,7 @@ services:
   # ============================================================
 
   platform-api:
-    image: abushadaf/launchdb-platform-api:v0.1.5
+    image: abushadaf/launchdb-platform-api:v0.1.6
     # build:
     #   context: ./platform
     #   dockerfile: Dockerfile
@@ -128,7 +128,7 @@ services:
 
 
   auth-service:
-    image: abushadaf/launchdb-auth-service:v0.1.5
+    image: abushadaf/launchdb-auth-service:v0.1.6
     # build:
     #   context: ./platform
     #   dockerfile: Dockerfile
@@ -170,7 +170,7 @@ services:
   # Each project gets its own postgrest-{projectId} container
 
   storage-service:
-    image: abushadaf/launchdb-storage-service:v0.1.5
+    image: abushadaf/launchdb-storage-service:v0.1.6
     # build:
     #   context: ./platform
     #   dockerfile: Dockerfile
@@ -208,7 +208,7 @@ services:
       start_period: 40s
 
   migrations:
-    image: abushadaf/launchdb-migrations-runner:v0.1.5
+    image: abushadaf/launchdb-migrations-runner:v0.1.6
     # build:
     #   context: ./platform
     #   dockerfile: Dockerfile
@@ -237,7 +237,7 @@ services:
       start_period: 40s
 
   postgrest-manager:
-    image: abushadaf/launchdb-postgrest-manager:v0.1.5
+    image: abushadaf/launchdb-postgrest-manager:v0.1.6
     # build: ./infrastructure/postgrest-manager
     container_name: launchdb-postgrest-manager
     restart: unless-stopped
@@ -309,7 +309,7 @@ services:
   # Build command: docker-compose build postgrest-image
 
   postgrest-image:
-    image: abushadaf/launchdb-postgrest:v0.1.5
+    image: abushadaf/launchdb-postgrest:v0.1.6
     # build: ./infrastructure/postgrest
     container_name: launchdb-postgrest-image-builder
     restart: "no"
@@ -322,7 +322,7 @@ services:
   # ============================================================
 
   backup:
-    image: abushadaf/launchdb-backup:v0.1.5
+    image: abushadaf/launchdb-backup:v0.1.6
     # build: ./infrastructure/backup
     container_name: launchdb-backup
     restart: "no"
