@@ -121,6 +121,7 @@ export class AuthService {
     // Get user (use service_role for RLS bypass)
     const client = await pool.connect();
     try {
+      await client.query('BEGIN');
       await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
       const user = await client.query(
         `SELECT id, email, password_hash
@@ -130,6 +131,7 @@ export class AuthService {
       );
 
       if (user.rows.length === 0) {
+        await client.query('ROLLBACK');
         throw new UnauthorizedException('Invalid credentials');
       }
 
@@ -142,6 +144,7 @@ export class AuthService {
       );
 
       if (!isValid) {
+        await client.query('ROLLBACK');
         throw new UnauthorizedException('Invalid credentials');
       }
 
@@ -153,6 +156,8 @@ export class AuthService {
         config.jwtSecret,
       );
 
+      await client.query('COMMIT');
+
       return {
         user_id: userData.id,
         email: userData.email,
@@ -160,6 +165,9 @@ export class AuthService {
         refresh_token: refreshToken,
         expires_in: this.ACCESS_TOKEN_TTL,
       };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
     } finally {
       client.release();
     }
@@ -269,6 +277,7 @@ export class AuthService {
 
     const client = await pool.connect();
     try {
+      await client.query('BEGIN');
       await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
       await client.query(
         `UPDATE auth.refresh_tokens
@@ -276,6 +285,10 @@ export class AuthService {
          WHERE token_hash = $1`,
         [tokenHash],
       );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
     } finally {
       client.release();
     }
@@ -293,6 +306,7 @@ export class AuthService {
 
     const client = await pool.connect();
     try {
+      await client.query('BEGIN');
       await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
       const result = await client.query(
         `SELECT id, email, created_at
@@ -302,16 +316,21 @@ export class AuthService {
       );
 
       if (result.rows.length === 0) {
+        await client.query('ROLLBACK');
         throw new NotFoundException('User not found');
       }
 
       const user = result.rows[0];
+      await client.query('COMMIT');
 
       return {
         user_id: user.id,
         email: user.email,
         created_at: user.created_at,
       };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
     } finally {
       client.release();
     }
