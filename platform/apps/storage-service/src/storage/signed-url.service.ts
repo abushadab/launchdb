@@ -7,7 +7,7 @@
 import { Injectable, Logger, UnauthorizedException, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TokenHashService, CryptoService } from '@launchdb/common/crypto';
-import { DatabaseService } from '@launchdb/common/database';
+import { DatabaseService, withJwtClaimsTx } from '@launchdb/common/database';
 import { Pool } from 'pg';
 
 export interface SignedUrlParams {
@@ -59,22 +59,13 @@ export class SignedUrlService implements OnModuleDestroy {
 
     // Store token in database (with service_role for RLS bypass)
     const pool = await this.getProjectPool(projectId);
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+    await withJwtClaimsTx(pool, null, async (client) => {
       await client.query(
         `INSERT INTO storage.signed_urls (token_hash, bucket, path, expires_at, created_at)
          VALUES ($1, $2, $3, $4, now())`,
         [tokenHash, bucket, filePath, expiresAt],
       );
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
 
     // Build signed URL
     const signedUrl = `${baseUrl}/storage/${projectId}/${bucket}/${filePath}?token=${token}`;
@@ -99,12 +90,7 @@ export class SignedUrlService implements OnModuleDestroy {
 
     try {
       const pool = await this.getProjectPool(projectId);
-      const client = await pool.connect();
-
-      try {
-        await client.query('BEGIN');
-        await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
-
+      const isValid = await withJwtClaimsTx(pool, null, async (client) => {
         const result = await client.query(
           `SELECT id, bucket, path, expires_at, used
            FROM storage.signed_urls
@@ -118,11 +104,10 @@ export class SignedUrlService implements OnModuleDestroy {
         );
 
         if (result.rows.length === 0) {
-          await client.query('ROLLBACK');
           this.logger.warn(
             `Invalid or expired signed URL token for ${projectId}/${bucket}/${path}`,
           );
-          return { projectId, bucket, path, valid: false };
+          return false;
         }
 
         // Mark token as used (one-time use)
@@ -133,14 +118,10 @@ export class SignedUrlService implements OnModuleDestroy {
           [result.rows[0].id],
         );
 
-        await client.query('COMMIT');
-        return { projectId, bucket, path, valid: true };
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-      } finally {
-        client.release();
-      }
+        return true;
+      });
+
+      return { projectId, bucket, path, valid: isValid };
     } catch (error) {
       this.logger.error(
         `Failed to validate signed URL for ${projectId}: ${error.message}`,
@@ -154,32 +135,21 @@ export class SignedUrlService implements OnModuleDestroy {
    */
   async cleanupExpiredUrls(projectId: string): Promise<number> {
     const pool = await this.getProjectPool(projectId);
-    const client = await pool.connect();
-
-    try {
-      await client.query('BEGIN');
-      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
-
+    const deletedCount = await withJwtClaimsTx(pool, null, async (client) => {
       const result = await client.query(
         `DELETE FROM storage.signed_urls
          WHERE expires_at < now() - interval '1 day'
          RETURNING id`,
       );
 
-      await client.query('COMMIT');
+      return result.rowCount ?? 0;
+    });
 
-      const deletedCount = result.rowCount;
-      this.logger.log(
-        `Cleaned up ${deletedCount} expired signed URLs for project ${projectId}`,
-      );
+    this.logger.log(
+      `Cleaned up ${deletedCount} expired signed URLs for project ${projectId}`,
+    );
 
-      return deletedCount ?? 0;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    return deletedCount;
   }
 
   /**

@@ -16,6 +16,7 @@ import { Pool } from 'pg';
 import { randomBytes } from 'crypto';
 import { PasswordService, TokenHashService } from '@launchdb/common/crypto';
 import { JwtService as CustomJwtService, JwtRole } from '@launchdb/common/jwt';
+import { withJwtClaimsTx } from '@launchdb/common/database';
 import { ProjectConfigService } from './project-config.service';
 import { SignupDto, SignupResponseDto } from './dto/signup.dto';
 import { LoginDto, LoginResponseDto } from './dto/login.dto';
@@ -60,12 +61,7 @@ export class AuthService {
     const userId = this.generateUserId();
 
     // Wrap user creation and session creation in transaction
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      // Set service_role for RLS bypass
-      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
-
+    const { accessToken, refreshToken } = await withJwtClaimsTx(pool, null, async (client) => {
       // Insert user
       try {
         await client.query(
@@ -82,28 +78,21 @@ export class AuthService {
       }
 
       // Create session within the same transaction
-      const { accessToken, refreshToken } = await this.createSessionWithClient(
+      return this.createSessionWithClient(
         client,
         userId,
         projectId,
         config.jwtSecret,
       );
+    });
 
-      await client.query('COMMIT');
-
-      return {
-        user_id: userId,
-        email: dto.email,
-        access_token: accessToken,
-        refresh_token: refreshToken,
-        expires_in: this.ACCESS_TOKEN_TTL,
-      };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    return {
+      user_id: userId,
+      email: dto.email,
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_in: this.ACCESS_TOKEN_TTL,
+    };
   }
 
   /**
@@ -118,11 +107,8 @@ export class AuthService {
     const config = await this.projectConfigService.getProjectConfig(projectId);
     const pool = this.getProjectPool(projectId, config);
 
-    // Get user (use service_role for RLS bypass)
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+    // Get user and create session (use service_role for RLS bypass)
+    const result = await withJwtClaimsTx(pool, null, async (client) => {
       const user = await client.query(
         `SELECT id, email, password_hash
          FROM auth.users
@@ -131,7 +117,6 @@ export class AuthService {
       );
 
       if (user.rows.length === 0) {
-        await client.query('ROLLBACK');
         throw new UnauthorizedException('Invalid credentials');
       }
 
@@ -144,7 +129,6 @@ export class AuthService {
       );
 
       if (!isValid) {
-        await client.query('ROLLBACK');
         throw new UnauthorizedException('Invalid credentials');
       }
 
@@ -156,21 +140,18 @@ export class AuthService {
         config.jwtSecret,
       );
 
-      await client.query('COMMIT');
-
       return {
         user_id: userData.id,
         email: userData.email,
         access_token: accessToken,
         refresh_token: refreshToken,
-        expires_in: this.ACCESS_TOKEN_TTL,
       };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
+
+    return {
+      ...result,
+      expires_in: this.ACCESS_TOKEN_TTL,
+    };
   }
 
   /**
@@ -186,12 +167,7 @@ export class AuthService {
     const pool = this.getProjectPool(projectId, config);
 
     // Wrap token rotation in transaction to prevent race conditions
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      // Set service_role for RLS bypass
-      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
-
+    return withJwtClaimsTx(pool, null, async (client) => {
       // Hash refresh token for lookup
       const tokenHash = this.tokenHashService.hash(dto.refresh_token);
 
@@ -249,19 +225,12 @@ export class AuthService {
         [tokenData.session_id],
       );
 
-      await client.query('COMMIT');
-
       return {
         access_token: accessToken,
         refresh_token: newRefreshToken,
         expires_in: this.ACCESS_TOKEN_TTL,
       };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
@@ -275,23 +244,14 @@ export class AuthService {
 
     const tokenHash = this.tokenHashService.hash(refreshToken);
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+    await withJwtClaimsTx(pool, null, async (client) => {
       await client.query(
         `UPDATE auth.refresh_tokens
          SET revoked_at = now()
          WHERE token_hash = $1`,
         [tokenHash],
       );
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
@@ -304,10 +264,7 @@ export class AuthService {
     const config = await this.projectConfigService.getProjectConfig(projectId);
     const pool = this.getProjectPool(projectId, config);
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
+    return withJwtClaimsTx(pool, null, async (client) => {
       const result = await client.query(
         `SELECT id, email, created_at
          FROM auth.users
@@ -316,24 +273,17 @@ export class AuthService {
       );
 
       if (result.rows.length === 0) {
-        await client.query('ROLLBACK');
         throw new NotFoundException('User not found');
       }
 
       const user = result.rows[0];
-      await client.query('COMMIT');
 
       return {
         user_id: user.id,
         email: user.email,
         created_at: user.created_at,
       };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /**
@@ -361,12 +311,7 @@ export class AuthService {
     const sessionId = this.generateSessionId();
     const expiresAt = new Date(Date.now() + this.REFRESH_TOKEN_TTL * 1000);
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      // Set service_role for RLS bypass
-      await client.query(`SET LOCAL request.jwt.claims = '{"role": "service_role"}'`);
-
+    await withJwtClaimsTx(pool, null, async (client) => {
       // Create session (expires_at = refresh token TTL, last_activity_at = now)
       const sessionExpiresAt = new Date(Date.now() + this.REFRESH_TOKEN_TTL * 1000);
       await client.query(
@@ -381,14 +326,7 @@ export class AuthService {
          VALUES ($1, $2, $3, $4, now())`,
         [sessionId, userId, tokenHash, expiresAt],
       );
-
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
 
     return { accessToken, refreshToken };
   }
