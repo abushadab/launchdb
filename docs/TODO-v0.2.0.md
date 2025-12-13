@@ -49,25 +49,24 @@ Quick fixes applied in v0.1.x that need proper solutions in v0.2.0.
 
 ---
 
-## 3. Entrypoint Permission Fix
+## 3. Entrypoint Permission Fix ✅ DONE
 
-**Current (Quick Fix):**
-- `platform/entrypoint.sh` runs `chown` at container startup
-- Container starts as root, fixes permissions, drops to nodejs
+**Status:** ✅ **Completed - Option B eliminates the issue**
 
-**Problem:**
-- Running as root (even briefly) is not ideal
-- Entrypoint runs on every restart, unnecessary overhead
+**What was done (v0.2.0):**
+- Option B implementation: postgrest-manager owns the `postgrest-projects` volume
+- Platform services no longer need to write to shared config directory
+- entrypoint.sh simplified to just `su-exec nodejs "$@"` (no runtime chown)
+- Dockerfile sets correct ownership at build time via `--chown=nodejs:nodejs`
 
-**Long-Term Solution:**
-- install.sh creates directories with correct ownership (UID 1001)
-- Or use Codex's architecture where postgrest-manager owns the volume
-- Remove entrypoint chown once proper solution in place
+**Current architecture:**
+- postgrest-manager writes configs directly to named volume (RW mount)
+- Platform containers use proper non-root user (nodejs UID 1001)
+- su-exec retained for privilege drop (minimal overhead)
 
-**Files to modify:**
-- `install.sh` - add directory creation with correct ownership
-- `platform/entrypoint.sh` - can be simplified once install.sh fixed
-- `platform/Dockerfile` - can remove su-exec once not needed
+**Files unchanged (already correct):**
+- `platform/entrypoint.sh` - Already simplified
+- `platform/Dockerfile` - Uses `--chown` at build time
 
 ---
 
@@ -85,21 +84,37 @@ Quick fixes applied in v0.1.x that need proper solutions in v0.2.0.
 
 ---
 
-## 5. Docker Socket Security (Deferred from v0.1.1)
+## 5. Docker Socket Security ✅ DONE
 
-**Current:**
-- postgrest-manager has Docker socket access
-- Runs as root
-- Documented in `infrastructure/postgrest-manager/SECURITY.md`
+**Status:** ✅ **Completed - P3 Docker Socket Security (14 Dec 2025)**
 
-**Long-Term Solution:**
-- Migrate to Docker HTTP API (remove docker-cli dependency)
-- Run as non-root user with Docker group permissions
-- Implement principle of least privilege
+**What was done:**
+- Added `docker-socket-proxy` to filter Docker API access
+- Migrated all shell scripts to `dockerode` library (13 calls eliminated)
+- Removed `docker-cli` from Dockerfile
+- Added non-root user (nodeuser UID 1001)
+- Updated `SECURITY.md` with v0.2.0 implementation
 
-**Files to modify:**
-- `infrastructure/postgrest-manager/index.js`
-- `infrastructure/postgrest-manager/Dockerfile`
+**Security improvements:**
+| Metric | Before | After |
+|--------|--------|-------|
+| Docker socket | Direct mount | Socket-proxy filtered |
+| User | root | nodeuser (UID 1001) |
+| Shell scripts | 6 files | 0 files |
+| Shell commands | 13 calls | 0 calls |
+| docker-cli | Installed | Removed |
+| API filtering | None | CONTAINERS, POST, EXEC only |
+
+**Security review:** LaunchGuard approved (9.5/10, 0 critical/high findings)
+
+**Files modified:**
+- `docker-compose.yml` - Added socket-proxy service
+- `infrastructure/postgrest-manager/lib/docker.js` - NEW dockerode wrapper
+- `infrastructure/postgrest-manager/index.js` - All endpoints migrated
+- `infrastructure/postgrest-manager/Dockerfile` - Non-root user
+- `infrastructure/postgrest-manager/SECURITY.md` - Updated docs
+
+**Release:** v0.2.0 - https://github.com/abushadab/launchdb/releases/tag/v0.2.0
 
 ---
 
@@ -109,9 +124,11 @@ Quick fixes applied in v0.1.x that need proper solutions in v0.2.0.
 |----------|------|--------|--------|
 | ~~P1~~ | ~~JWT env vars in docker-compose.yml~~ | ~~Low~~ | ✅ Done v0.1.9 |
 | ~~P1~~ | ~~PostgREST config architecture (Option B)~~ | ~~Medium~~ | ✅ Done 13 Dec 2025 |
-| P2 | Remove entrypoint chown workaround | Low | Pending |
+| ~~P2~~ | ~~Remove entrypoint chown workaround~~ | ~~Low~~ | ✅ Done (Option B) |
 | ~~P2~~ | ~~Clean up named volume definition~~ | ~~Low~~ | ✅ Done (Option B) |
-| P3 | Docker socket security | High | Pending |
+| ~~P3~~ | ~~Docker socket security~~ | ~~High~~ | ✅ Done 14 Dec 2025 |
+
+**🎉 All v0.2.0 technical debt items complete!**
 
 ---
 
