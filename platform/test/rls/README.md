@@ -280,3 +280,5 @@ Add to GitHub Actions workflow:
 - `libs/common/database/src/with-jwt-claims-tx.ts` - RLS context utility
 - `libs/sql/project_migrations/001_auth_schema.sql` - auth.uid() helper
 - `docs/PLAN-v0.2.1.md` - Implementation plan
+
+<!-- CI workflow test trigger -->

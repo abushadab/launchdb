@@ -76,20 +76,39 @@ jobs:
       - name: Create test .env file
         run: |
           cat > .env << 'EOF'
-          # Test environment
+          # Test environment - CI only
           POSTGRES_HOST=postgres
           POSTGRES_PORT=5432
           POSTGRES_USER=postgres
           POSTGRES_PASSWORD=testpassword123
           POSTGRES_DB=platform
+          POSTGRES_SUPERUSER_PASSWORD=testpassword123
 
-          PLATFORM_JWT_SECRET=test-jwt-secret-for-ci-only
-          LAUNCHDB_MASTER_KEY=test-master-key-for-ci-only
+          # Auth & Security
+          PLATFORM_JWT_SECRET=test-jwt-secret-for-ci-only-min-32-chars
+          # This key is the base64 encoding of 'test-master-key-for-ci-only-32by' (exactly 32 bytes)
+          LAUNCHDB_MASTER_KEY=dGVzdC1tYXN0ZXIta2V5LWZvci1jaS1vbmx5LTMyYnk=
           INTERNAL_API_KEY=test-internal-key-for-ci
 
+          # PostgREST Manager
+          POSTGREST_ADMIN_KEY=test-postgrest-admin-key
+          POSTGREST_MANAGER_PASSWORD=testpassword123
+
+          # Domain & CORS
           DOMAIN=localhost
           CORS_ORIGIN=http://localhost:3000
 
+          # SMTP (dummy for CI)
+          SMTP_USER=test@example.com
+          SMTP_PASSWORD=dummy-smtp-password
+
+          # Caddy/ACME (dummy for CI)
+          ACME_EMAIL=test@example.com
+
+          # Cloudflare (empty - tunnel disabled in CI)
+          CLOUDFLARE_TUNNEL_TOKEN=
+
+          # Paths
           HOST_SCRIPT_DIR=${{ github.workspace }}/infrastructure/scripts
           HOST_CONFIG_DIR=${{ github.workspace }}/infrastructure/postgrest/projects
           EOF
