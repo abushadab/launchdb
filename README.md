@@ -118,7 +118,7 @@ launchdb/
 │   ├── architecture.md      # System architecture
 │   ├── platform/            # Platform service docs
 │   └── infrastructure/      # Infrastructure docs
-├── LICENSE                  # MIT License
+├── LICENSE                  # Apache-2.0 License
 └── README.md                # This file
 ```
 
@@ -185,7 +185,7 @@ Contributions are welcome! Please read the documentation and follow the existing
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Apache-2.0 License - see [LICENSE](LICENSE) for details.
 
 ## Support
 
