@@ -72,6 +72,7 @@ Registry of all projects and their databases.
 CREATE TABLE platform.projects (
   id TEXT PRIMARY KEY,  -- Format: 'proj_{16_hex_chars}'
   name TEXT NOT NULL,
+  display_name TEXT,  -- User-friendly display name for the project
   owner_id UUID NOT NULL REFERENCES platform.owners(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'provisioning'
     CHECK (status IN ('provisioning', 'active', 'suspended', 'failed', 'deleted')),
@@ -159,6 +160,7 @@ CREATE TABLE platform.api_keys (
 **Indexes:**
 - `idx_api_keys_project_id` on `project_id`
 - `idx_api_keys_public_key` on `public_key`
+- `idx_api_keys_active_type` on `(project_id, key_type) WHERE revoked_at IS NULL` (partial unique index for active keys)
 
 **Key Types:**
 - `anon`: Client-side key (limited permissions)
@@ -394,24 +396,24 @@ File metadata.
 ```sql
 CREATE TABLE storage.objects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  bucket_id UUID NOT NULL REFERENCES storage.buckets(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,  -- File path within bucket
+  bucket TEXT NOT NULL,  -- Bucket name (denormalized)
+  path TEXT NOT NULL,  -- File path within bucket
   owner_id UUID,  -- Reference to auth.users(id)
   size BIGINT NOT NULL,  -- Bytes
-  mime_type TEXT NOT NULL,
+  content_type TEXT NOT NULL,  -- MIME type
   metadata JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_accessed_at TIMESTAMPTZ,
   version TEXT NOT NULL DEFAULT 'v1',
-  UNIQUE(bucket_id, name)
+  UNIQUE(bucket, path)
 );
 ```
 
 **Indexes:**
-- `idx_objects_bucket_id` on `bucket_id`
+- `idx_objects_bucket` on `bucket`
 - `idx_objects_owner_id` on `owner_id`
-- `idx_objects_name` on `(bucket_id, name)`
+- `idx_objects_path` on `(bucket, path)`
 - `idx_objects_created_at` on `created_at DESC`
 
 **RLS Policies:**
@@ -428,19 +430,19 @@ Temporary access tokens for files.
 ```sql
 CREATE TABLE storage.signed_urls (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  object_id UUID NOT NULL REFERENCES storage.objects(id) ON DELETE CASCADE,
   token_hash TEXT UNIQUE NOT NULL,  -- SHA-256 hash
+  bucket TEXT NOT NULL,  -- Bucket name
+  path TEXT NOT NULL,  -- File path
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ NOT NULL,
-  created_by UUID,  -- auth.users(id)
-  access_count INT NOT NULL DEFAULT 0,
-  max_access_count INT  -- NULL = unlimited
+  used BOOLEAN NOT NULL DEFAULT false,
+  used_at TIMESTAMPTZ
 );
 ```
 
 **Indexes:**
-- `idx_signed_urls_token_hash` on `token_hash WHERE expires_at > now()`
-- `idx_signed_urls_object_id` on `object_id`
+- `idx_signed_urls_token_hash` on `token_hash`
+- `idx_signed_urls_bucket_path` on `(bucket, path)`
 - `idx_signed_urls_expires_at` on `expires_at`
 
 **RLS Policies:**
@@ -536,15 +538,14 @@ auth.uid() RETURNS UUID
 
 -- Get current user role ('anon', 'authenticated', 'service_role')
 auth.role() RETURNS TEXT
-
--- Get current user email from JWT
-auth.email() RETURNS TEXT
 ```
+
+**Note:** These functions safely handle empty/null JWT claims by returning NULL instead of erroring.
 
 **Usage in RLS:**
 
 ```sql
-CREATE POLICY users_select_own ON public.posts
+CREATE POLICY posts_select_own ON public.posts
   FOR SELECT
   USING (user_id = auth.uid());
 ```

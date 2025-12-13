@@ -5,7 +5,7 @@ The Storage Service provides per-project file storage with bucket-based organiza
 ## Base URL
 
 ```
-http://localhost:3002
+http://localhost:8003
 ```
 
 ## Architecture
@@ -96,7 +96,7 @@ Content-Type: multipart/form-data
   "size": 245678,
   "content_type": "image/jpeg",
   "uploaded_at": "2025-12-04T10:00:00.000Z",
-  "url": "http://localhost:3002/storage/proj_802682481788fe51/avatars/users/user123.jpg"
+  "url": "http://localhost:8003/storage/proj_802682481788fe51/avatars/users/user123.jpg"
 }
 ```
 
@@ -104,7 +104,7 @@ Content-Type: multipart/form-data
 
 ```bash
 curl -X POST \
-  http://localhost:3002/storage/proj_802682481788fe51/avatars/users/user123.jpg \
+  http://localhost:8003/storage/proj_802682481788fe51/avatars/users/user123.jpg \
   -H "Authorization: Bearer <anon_key>" \
   -F "file=@profile.jpg"
 ```
@@ -116,7 +116,7 @@ const formData = new FormData();
 formData.append('file', fileBlob, 'user123.jpg');
 
 const response = await fetch(
-  'http://localhost:3002/storage/proj_802682481788fe51/avatars/users/user123.jpg',
+  'http://localhost:8003/storage/proj_802682481788fe51/avatars/users/user123.jpg',
   {
     method: 'POST',
     headers: {
@@ -203,13 +203,13 @@ Content-Disposition: inline; filename="user123.jpg"
 ```bash
 # With authorization header
 curl -X GET \
-  http://localhost:3002/storage/proj_802682481788fe51/avatars/users/user123.jpg \
+  http://localhost:8003/storage/proj_802682481788fe51/avatars/users/user123.jpg \
   -H "Authorization: Bearer <anon_key>" \
   -o downloaded.jpg
 
 # With signed URL token
 curl -X GET \
-  "http://localhost:3002/storage/proj_802682481788fe51/avatars/users/user123.jpg?token=<signed_token>" \
+  "http://localhost:8003/storage/proj_802682481788fe51/avatars/users/user123.jpg?token=<signed_token>" \
   -o downloaded.jpg
 ```
 
@@ -218,7 +218,7 @@ curl -X GET \
 ```javascript
 // With authorization
 const response = await fetch(
-  'http://localhost:3002/storage/proj_802682481788fe51/avatars/users/user123.jpg',
+  'http://localhost:8003/storage/proj_802682481788fe51/avatars/users/user123.jpg',
   {
     headers: {
       'Authorization': 'Bearer <anon_key>',
@@ -283,7 +283,7 @@ Authorization: Bearer <project_service_role_key>
 
 ```bash
 curl -X DELETE \
-  http://localhost:3002/storage/proj_802682481788fe51/avatars/users/user123.jpg \
+  http://localhost:8003/storage/proj_802682481788fe51/avatars/users/user123.jpg \
   -H "Authorization: Bearer <service_role_key>"
 ```
 
@@ -291,7 +291,7 @@ curl -X DELETE \
 
 ```javascript
 const response = await fetch(
-  'http://localhost:3002/storage/proj_802682481788fe51/avatars/users/user123.jpg',
+  'http://localhost:8003/storage/proj_802682481788fe51/avatars/users/user123.jpg',
   {
     method: 'DELETE',
     headers: {
@@ -363,7 +363,7 @@ Generate a temporary signed URL for file access without authentication.
 
 ```json
 {
-  "url": "http://localhost:3002/storage/proj_802682481788fe51/avatars/users/user123.jpg?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "url": "http://localhost:8003/storage/proj_802682481788fe51/avatars/users/user123.jpg?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "expires_at": "2025-12-04T10:05:00.000Z"
 }
 ```
@@ -372,7 +372,7 @@ Generate a temporary signed URL for file access without authentication.
 
 ```bash
 curl -X POST \
-  http://localhost:3002/storage/proj_802682481788fe51/sign \
+  http://localhost:8003/storage/proj_802682481788fe51/sign \
   -H "Authorization: Bearer <service_role_key>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -386,7 +386,7 @@ curl -X POST \
 
 ```javascript
 const response = await fetch(
-  'http://localhost:3002/storage/proj_802682481788fe51/sign',
+  'http://localhost:8003/storage/proj_802682481788fe51/sign',
   {
     method: 'POST',
     headers: {
@@ -641,7 +641,7 @@ class StorageClient {
 
 // Usage
 const storage = new StorageClient(
-  'http://localhost:3002',
+  'http://localhost:8003',
   'proj_802682481788fe51',
   '<anon_key or service_role_key>'
 );
@@ -671,7 +671,7 @@ await storage.delete('avatars', 'users/user123.jpg');
 
 ```bash
 # Storage Service runs on port 3002
-curl http://localhost:3002/health
+curl http://localhost:8003/health
 ```
 
 ### Test Flow
@@ -679,33 +679,46 @@ curl http://localhost:3002/health
 ```bash
 # 1. Upload file
 curl -X POST \
-  http://localhost:3002/storage/proj_802682481788fe51/test/file.txt \
+  http://localhost:8003/storage/proj_802682481788fe51/test/file.txt \
   -H "Authorization: Bearer <anon_key>" \
   -F "file=@test.txt"
 
 # 2. Download file
 curl -X GET \
-  http://localhost:3002/storage/proj_802682481788fe51/test/file.txt \
+  http://localhost:8003/storage/proj_802682481788fe51/test/file.txt \
   -H "Authorization: Bearer <anon_key>" \
   -o downloaded.txt
 
 # 3. Create signed URL
 curl -X POST \
-  http://localhost:3002/storage/proj_802682481788fe51/sign \
+  http://localhost:8003/storage/proj_802682481788fe51/sign \
   -H "Authorization: Bearer <service_role_key>" \
   -H "Content-Type: application/json" \
   -d '{"path":"file.txt","bucket":"test","expires_in":300}'
 
 # 4. Download with signed URL (no auth needed)
 curl -X GET \
-  "http://localhost:3002/storage/proj_802682481788fe51/test/file.txt?token=<signed_token>" \
+  "http://localhost:8003/storage/proj_802682481788fe51/test/file.txt?token=<signed_token>" \
   -o downloaded.txt
 
 # 5. Delete file
 curl -X DELETE \
-  http://localhost:3002/storage/proj_802682481788fe51/test/file.txt \
+  http://localhost:8003/storage/proj_802682481788fe51/test/file.txt \
   -H "Authorization: Bearer <service_role_key>"
 ```
+
+---
+
+## Environment Variables
+
+**Required:**
+- `PLATFORM_DB_DSN`: PostgreSQL connection string for platform database
+- `STORAGE_SERVICE_PORT`: Service port (default: 8003)
+- `STORAGE_BASE_PATH`: Base filesystem path for storing files (default: `/data`)
+- `BASE_URL`: Public base URL for generating file access URLs (default: `http://localhost:8003`)
+- `CORS_ORIGIN`: Allowed origins for CORS (e.g., `*` for dev, specific domains for production)
+
+See [Environment Variables Documentation](./platform-env-vars.md) for full reference.
 
 ---
 
@@ -719,6 +732,35 @@ curl -X DELETE \
 | 404 | Not Found | File or project not found |
 | 413 | Payload Too Large | File exceeds size limit |
 | 500 | Internal Server Error | Server error during operation |
+
+---
+
+## Error Handling
+
+The Storage Service uses the centralized `@launchdb/common/errors` library for consistent error responses.
+
+**Error Factory Functions Used:**
+```typescript
+import { ERRORS } from '@launchdb/common/errors';
+
+// File not found
+throw ERRORS.ObjectNotFound(path);
+
+// Signed URL expired
+throw ERRORS.SignedUrlExpired();
+
+// Project not found
+throw ERRORS.ProjectNotFound(projectId);
+
+// Project not active
+throw ERRORS.ValidationError('Project not active', projectId);
+
+// Internal errors (missing credentials, config issues)
+throw ERRORS.InternalError('Project database password not found');
+```
+
+**LaunchDbErrorFilter:**
+The service registers `LaunchDbErrorFilter` globally to convert LaunchDbError instances to proper HTTP responses with correct status codes.
 
 ---
 

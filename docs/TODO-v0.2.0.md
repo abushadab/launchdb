@@ -43,22 +43,18 @@ Quick fixes applied in v0.1.x that need proper solutions in v0.2.0.
 
 ---
 
-## 2. JWT Environment Variables
+## 2. JWT Environment Variables ✅ DONE in v0.1.9
 
-**Current (Quick Fix):**
-- Manually added `JWT_SECRET` and `platformJwtSecret` to auth-service and storage-service in production docker-compose.yml
+**Status:** ✅ **Completed in v0.1.9**
 
-**Problem:**
-- Source `docker-compose.yml` in repo doesn't have these env vars
-- Fresh installs will have same issue
+**What was done:**
+- Updated source `docker-compose.yml` to include `JWT_SECRET` env var
+- Standardized env var name from `platformJwtSecret` to `JWT_SECRET` across all services
+- All platform docs updated to reflect correct variable name
 
-**Long-Term Solution:**
-- Update source `docker-compose.yml` to include JWT env vars for all services that need them
-- Audit all services for required env vars
-
-**Files to modify:**
-- `docker-compose.yml` - auth-service environment section
-- `docker-compose.yml` - storage-service environment section
+**Files modified:**
+- `docker-compose.yml` - Added JWT_SECRET to platform-api, auth-service, storage-service
+- All platform documentation updated in docs audit (v0.1.9)
 
 ---
 
@@ -122,13 +118,13 @@ Quick fixes applied in v0.1.x that need proper solutions in v0.2.0.
 
 ## Priority Order for v0.2.0
 
-| Priority | Item | Effort |
-|----------|------|--------|
-| P1 | JWT env vars in docker-compose.yml | Low |
-| P1 | PostgREST config architecture (Codex solution) | Medium |
-| P2 | Remove entrypoint chown workaround | Low |
-| P2 | Clean up named volume definition | Low |
-| P3 | Docker socket security | High |
+| Priority | Item | Effort | Status |
+|----------|------|--------|--------|
+| ~~P1~~ | ~~JWT env vars in docker-compose.yml~~ | ~~Low~~ | ✅ Done v0.1.9 |
+| P1 | PostgREST config architecture (Codex solution) | Medium | Pending |
+| P2 | Remove entrypoint chown workaround | Low | Pending |
+| P2 | Clean up named volume definition | Low | Pending |
+| P3 | Docker socket security | High | Pending |
 
 ---
 

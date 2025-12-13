@@ -61,7 +61,7 @@ vim .env
 # 6. Set HOST_SCRIPT_DIR and HOST_CONFIG_DIR to absolute paths
 
 # 7. Start infrastructure
-docker-compose up -d postgres pgbouncer postgrest-manager
+docker compose up -d postgres pgbouncer postgrest-manager
 ```
 
 ## Required Variables
@@ -124,7 +124,7 @@ POSTGRES_SUPERUSER=postgres  # Default, recommended
 **Security:**
 - Different from `POSTGRES_SUPERUSER_PASSWORD`
 - Generated and stored by Migrations service when creating project databases
-- Unique per project in production (v2 feature)
+- Unique per project in production (future v0.2.0+ feature)
 
 **Example:**
 ```bash
@@ -190,7 +190,7 @@ PLATFORM_JWT_SECRET=$(openssl rand -base64 32)
 **Service:** PostgREST (per-project containers)
 **Description:** Default JWT secret template for PostgREST instances.
 
-**Note:** In v1, each project gets a unique JWT secret generated at creation time. This variable serves as a fallback/template.
+**Note:** In v0.1.x, each project gets a unique JWT secret generated at creation time. This variable serves as a fallback/template.
 
 **Security:**
 - 32 bytes, base64 encoded
@@ -1293,7 +1293,7 @@ cd pgbouncer
 ./generate-userlist.sh
 
 # 3. Restart services
-docker-compose restart pgbouncer platform-api
+docker compose restart pgbouncer platform-api
 ```
 
 ---

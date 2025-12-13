@@ -276,8 +276,8 @@ mkdir -p backup/ssh
 git clone https://github.com/yourusername/launchdb.git /opt/launchdb
 
 # Or download release tarball
-wget https://github.com/yourusername/launchdb/archive/refs/tags/v1.0.0.tar.gz
-tar -xzf v1.0.0.tar.gz -C /opt/launchdb --strip-components=1
+wget https://github.com/yourusername/launchdb/archive/refs/tags/v0.1.9.tar.gz
+tar -xzf v0.1.9.tar.gz -C /opt/launchdb --strip-components=1
 
 # Verify structure
 ls -la /opt/launchdb
@@ -441,24 +441,32 @@ cat Caddyfile
 
 **Expected Caddyfile:**
 ```
-{$DOMAIN} {
-  # Automatic TLS via Let's Encrypt
-  tls {$ACME_EMAIL}
-
+# NOTE: Using http:// prefix when behind Cloudflare Tunnel
+# Cloudflare handles TLS termination
+http://{$DOMAIN} {
   # Platform API
   handle /api/* {
     reverse_proxy platform-api:8000
   }
 
-  # Dashboard UI
-  handle /* {
-    reverse_proxy dashboard-ui:3001
+  # Auth Service (per-project)
+  handle /auth/* {
+    reverse_proxy auth-service:8001
   }
 
-  # Per-project PostgREST instances
-  # Routed by Caddy based on project ID in URL
-  handle /project/* {
-    reverse_proxy postgrest-{project_id}:3000
+  # PostgREST Routes (per-project database access)
+  handle /db/* {
+    reverse_proxy platform-api:8000
+  }
+
+  # Storage Service (per-project)
+  handle /storage/* {
+    reverse_proxy storage-service:8003
+  }
+
+  # Default Route (placeholder - no dashboard in v0.1.x)
+  handle /* {
+    respond "LaunchDB v0.1.10 - API running. Dashboard coming in v0.2.0."
   }
 }
 ```
@@ -507,10 +515,10 @@ docker compose build backup
 
 # Verify images built
 docker images | grep launchdb
-# launchdb/pgbouncer          v1
-# launchdb/postgrest-manager  latest
-# launchdb/postgrest          v1
-# launchdb/backup             latest
+# abushadaf/launchdb-pgbouncer          v0.1.9
+# abushadaf/launchdb-postgrest-manager  v0.1.9
+# abushadaf/launchdb-postgrest          v0.1.9
+# abushadaf/launchdb-backup             v0.1.9
 ```
 
 ### Step 2: Start Core Infrastructure
@@ -589,9 +597,6 @@ docker compose up -d auth-service
 # Start Storage service
 docker compose up -d storage-service
 
-# Start Dashboard UI
-docker compose up -d dashboard-ui
-
 # Wait for all services to be healthy
 docker compose ps
 ```
@@ -626,7 +631,6 @@ docker compose ps
 # launchdb-migrations          Up (healthy)
 # launchdb-auth-service        Up (healthy)
 # launchdb-storage-service     Up (healthy)
-# launchdb-dashboard-ui        Up (healthy)
 # launchdb-caddy               Up (healthy)
 ```
 
@@ -949,11 +953,11 @@ cd /opt/launchdb
 
 # Pull latest changes
 git fetch origin
-git checkout v1.0.1  # Or latest version tag
+git checkout v0.1.9  # Or latest version tag
 
 # Or download new release
-wget https://github.com/yourusername/launchdb/archive/refs/tags/v1.0.1.tar.gz
-tar -xzf v1.0.1.tar.gz -C /opt/launchdb --strip-components=1
+wget https://github.com/yourusername/launchdb/archive/refs/tags/v0.1.9.tar.gz
+tar -xzf v0.1.9.tar.gz -C /opt/launchdb --strip-components=1
 
 # Rebuild images
 docker compose build
@@ -1088,9 +1092,9 @@ docker ps -a --filter "name=postgrest-proj_" --filter "status=exited" -q | xargs
 
 ### Horizontal Scaling (Multiple Servers)
 
-**Not supported in v1.** LaunchDB v1 is designed for single-VPS deployment.
+**Not supported in v0.1.x.** LaunchDB v0.1.x is designed for single-VPS deployment.
 
-**v2 horizontal scaling options:**
+**Future horizontal scaling options (v0.2.0+):**
 - Multiple PostgreSQL instances (sharded by project)
 - Load balancer for PostgREST containers
 - Kubernetes for container orchestration
@@ -1121,7 +1125,7 @@ docker exec launchdb-pgbouncer kill -HUP 1
 # Edit docker-compose.yml
 vim /opt/launchdb/docker-compose.yml
 
-# Change line 47:
+# Change line 45:
 - "max_connections=1000"  # Increase from 500
 
 # Restart PostgreSQL
@@ -1136,7 +1140,7 @@ docker compose restart postgres
 cd /opt/launchdb
 
 # Checkout previous version
-git checkout v1.0.0  # Replace with previous stable version
+git checkout v0.1.4  # Replace with previous stable version
 
 # Rebuild images
 docker compose build
@@ -1239,7 +1243,7 @@ docker exec launchdb-postgres psql -U postgres -c "SHOW max_connections;"
 ```bash
 # Increase max_connections in docker-compose.yml
 vim docker-compose.yml
-# Line 47: max_connections=1000
+# Line 45: max_connections=1000
 
 # Restart PostgreSQL
 docker compose restart postgres
