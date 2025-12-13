@@ -126,7 +126,7 @@ LaunchDB is a multi-tenant PostgreSQL-as-a-Service platform that provides isolat
 - PostgREST configuration generation
 - Health checks and monitoring
 
-**Tech Stack:** Express.js, Docker API, Shell scripts
+**Tech Stack:** Express.js, dockerode, docker-socket-proxy
 
 **Port:** 9000 (internal only)
 
@@ -310,12 +310,11 @@ Creates new PostgREST container for project.
 
 **Process:**
 1. Validate project exists and has required secrets
-2. Register database in PgBouncer (`pgbouncer-add-project.sh`)
-3. Register user in PgBouncer (`pgbouncer-add-user.sh`)
-4. Generate PostgREST config file
-5. Spawn Docker container with proper network and environment
-6. Wait for container health check
-7. Return success/failure
+2. Register database in PgBouncer (via `execInContainer()` with flock + awk)
+3. Generate PostgREST config file
+4. Spawn Docker container via `createPostgrestContainer()`
+5. Wait for container health check via `waitForHealthy()`
+6. Return success/failure
 
 **Timeout:** 30 seconds
 
@@ -335,11 +334,10 @@ Reloads PostgREST configuration via SIGHUP.
 Removes PostgREST container and cleans up resources.
 
 **Process:**
-1. Stop Docker container (if exists)
-2. Remove Docker container
-3. Remove PgBouncer database entry (`pgbouncer-remove-project.sh`)
-4. Remove PgBouncer user entry (`pgbouncer-remove-user.sh`)
-5. Remove PostgREST config file
+1. Stop Docker container via `stopContainer()` (if exists)
+2. Remove Docker container via `removeContainer()`
+3. Remove PgBouncer database entry (via `execInContainer()` with flock + sed)
+4. Remove PostgREST config file
 
 **Note:** Cleanup runs even if container doesn't exist (idempotent)
 
