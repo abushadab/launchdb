@@ -1,0 +1,203 @@
+# Auth RLS Integration Tests
+# Tests for auth.users, auth.sessions, and auth.refresh_tokens Row Level Security policies
+
+policies:
+  # auth.users policies
+  - name: users_self_select
+    table: auth.users
+    role: authenticated
+    permission: SELECT
+    policy: "USING (id = auth.uid())"
+
+  - name: users_self_update
+    table: auth.users
+    role: authenticated
+    permission: UPDATE
+    policy: "USING (id = auth.uid())"
+
+  # auth.sessions policies
+  - name: sessions_own_select
+    table: auth.sessions
+    role: authenticated
+    permission: SELECT
+    policy: "USING (user_id = auth.uid())"
+
+  - name: sessions_own_delete
+    table: auth.sessions
+    role: authenticated
+    permission: DELETE
+    policy: "USING (user_id = auth.uid())"
+
+  # auth.refresh_tokens policies
+  - name: refresh_tokens_own_select
+    table: auth.refresh_tokens
+    role: authenticated
+    permission: SELECT
+    policy: "USING (user_id = auth.uid())"
+
+  - name: refresh_tokens_own_delete
+    table: auth.refresh_tokens
+    role: authenticated
+    permission: DELETE
+    policy: "USING (user_id = auth.uid())"
+
+tests:
+  - description: "Authenticated user can only SELECT own user record"
+    setup:
+      - policy: users_self_select
+    asserts:
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: auth.users
+        where: "id = 'user-1'"
+        expect: rows
+        comment: "User can see their own record"
+
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: auth.users
+        where: "id = 'user-2'"
+        expect: empty
+        comment: "RLS prevents seeing other users' records"
+
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: auth.users
+        expect: rows
+        rows_count: 1
+        comment: "User sees only their own record (1 row)"
+
+  - description: "Authenticated user can only UPDATE own user record"
+    setup:
+      - policy: users_self_update
+    asserts:
+      - action: UPDATE
+        as: { role: authenticated, sub: user-1 }
+        table: auth.users
+        set: { email_verified: true }
+        where: "id = 'user-1'"
+        expect: success
+        comment: "User can update their own record"
+
+      - action: UPDATE
+        as: { role: authenticated, sub: user-1 }
+        table: auth.users
+        set: { email_verified: true }
+        where: "id = 'user-2'"
+        expect: success
+        rows_affected: 0
+        comment: "RLS prevents updating other users' records"
+
+      - action: UPDATE
+        as: { role: authenticated, sub: user-1 }
+        table: auth.users
+        set: { password_hash: 'hacked' }
+        where: "id = 'user-1'"
+        expect: error
+        error_pattern: "permission denied"
+        comment: "User cannot update password_hash directly (column-level RLS)"
+
+  - description: "Authenticated user can only SELECT own sessions"
+    setup:
+      - policy: sessions_own_select
+    asserts:
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: auth.sessions
+        where: "user_id = 'user-1'"
+        expect: rows
+        comment: "User can see their own sessions"
+
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: auth.sessions
+        where: "user_id = 'user-2'"
+        expect: empty
+        comment: "RLS filters out other users' sessions"
+
+      - action: SELECT
+        as: { role: authenticated, sub: user-2 }
+        from: auth.sessions
+        where: "user_id = 'user-2'"
+        expect: rows
+        comment: "User-2 can see their own sessions"
+
+  - description: "Authenticated user can only DELETE own sessions"
+    setup:
+      - policy: sessions_own_delete
+    asserts:
+      - action: DELETE
+        as: { role: authenticated, sub: user-1 }
+        from: auth.sessions
+        where: "user_id = 'user-1'"
+        expect: success
+        comment: "User can delete their own sessions (logout)"
+
+      - action: DELETE
+        as: { role: authenticated, sub: user-1 }
+        from: auth.sessions
+        where: "user_id = 'user-2'"
+        expect: success
+        rows_affected: 0
+        comment: "RLS prevents deleting other users' sessions"
+
+  - description: "Authenticated user can only SELECT own refresh tokens"
+    setup:
+      - policy: refresh_tokens_own_select
+    asserts:
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: auth.refresh_tokens
+        where: "user_id = 'user-1'"
+        expect: rows
+        comment: "User can see their own refresh tokens"
+
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: auth.refresh_tokens
+        where: "user_id = 'user-2'"
+        expect: empty
+        comment: "RLS filters out other users' refresh tokens"
+
+  - description: "Authenticated user can only DELETE own refresh tokens"
+    setup:
+      - policy: refresh_tokens_own_delete
+    asserts:
+      - action: DELETE
+        as: { role: authenticated, sub: user-1 }
+        from: auth.refresh_tokens
+        where: "user_id = 'user-1'"
+        expect: success
+        comment: "User can revoke their own refresh tokens"
+
+      - action: DELETE
+        as: { role: authenticated, sub: user-1 }
+        from: auth.refresh_tokens
+        where: "user_id = 'user-2'"
+        expect: success
+        rows_affected: 0
+        comment: "RLS prevents revoking other users' tokens"
+
+  - description: "Anon role cannot access auth tables"
+    setup:
+      - policy: users_self_select
+      - policy: sessions_own_select
+      - policy: refresh_tokens_own_select
+    asserts:
+      - action: SELECT
+        as: { role: anon }
+        from: auth.users
+        expect: empty
+        comment: "Anon cannot see any users"
+
+      - action: SELECT
+        as: { role: anon }
+        from: auth.sessions
+        expect: empty
+        comment: "Anon cannot see any sessions"
+
+      - action: SELECT
+        as: { role: anon }
+        from: auth.refresh_tokens
+        expect: empty
+        comment: "Anon cannot see any tokens"

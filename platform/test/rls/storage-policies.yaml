@@ -1,0 +1,181 @@
+# Storage RLS Integration Tests
+# Tests for storage.objects and storage.buckets Row Level Security policies
+
+policies:
+  # storage.objects policies
+  - name: objects_owner_select
+    table: storage.objects
+    role: authenticated
+    permission: SELECT
+    policy: "USING (owner_id = auth.uid())"
+
+  - name: objects_owner_insert
+    table: storage.objects
+    role: authenticated
+    permission: INSERT
+    policy: "WITH CHECK (owner_id = auth.uid())"
+
+  - name: objects_owner_update
+    table: storage.objects
+    role: authenticated
+    permission: UPDATE
+    policy: "USING (owner_id = auth.uid())"
+
+  - name: objects_owner_delete
+    table: storage.objects
+    role: authenticated
+    permission: DELETE
+    policy: "USING (owner_id = auth.uid())"
+
+  # storage.buckets policies
+  - name: buckets_public_select
+    table: storage.buckets
+    role: authenticated
+    permission: SELECT
+    policy: "USING (true)"  # All users can see bucket metadata
+
+  - name: buckets_owner_insert
+    table: storage.buckets
+    role: authenticated
+    permission: INSERT
+    policy: "WITH CHECK (owner_id = auth.uid())"
+
+tests:
+  - description: "Authenticated user can only SELECT own objects"
+    setup:
+      - policy: objects_owner_select
+    asserts:
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: storage.objects
+        where: "owner_id = 'user-1'"
+        expect: rows
+        comment: "User should see their own objects"
+
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: storage.objects
+        where: "owner_id = 'user-2'"
+        expect: empty
+        comment: "RLS should filter out other users' objects"
+
+      - action: SELECT
+        as: { role: authenticated, sub: user-2 }
+        from: storage.objects
+        where: "owner_id = 'user-2'"
+        expect: rows
+        comment: "User-2 should see their own objects"
+
+  - description: "Authenticated user can only INSERT objects with own owner_id"
+    setup:
+      - policy: objects_owner_insert
+    asserts:
+      - action: INSERT
+        as: { role: authenticated, sub: user-1 }
+        into: storage.objects
+        values:
+          id: gen_random_uuid()
+          bucket: test-bucket
+          path: /user1/file.txt
+          owner_id: user-1
+          size: 1024
+          content_type: text/plain
+        expect: success
+        comment: "User can insert with own owner_id"
+
+      - action: INSERT
+        as: { role: authenticated, sub: user-1 }
+        into: storage.objects
+        values:
+          id: gen_random_uuid()
+          bucket: test-bucket
+          path: /user2/file.txt
+          owner_id: user-2
+          size: 1024
+          content_type: text/plain
+        expect: error
+        error_pattern: "new row violates row-level security policy"
+        comment: "User cannot insert with another user's owner_id"
+
+  - description: "Authenticated user can only UPDATE own objects"
+    setup:
+      - policy: objects_owner_update
+    asserts:
+      - action: UPDATE
+        as: { role: authenticated, sub: user-1 }
+        table: storage.objects
+        set: { size: 2048 }
+        where: "owner_id = 'user-1'"
+        expect: success
+        comment: "User can update their own objects"
+
+      - action: UPDATE
+        as: { role: authenticated, sub: user-1 }
+        table: storage.objects
+        set: { size: 2048 }
+        where: "owner_id = 'user-2'"
+        expect: success
+        rows_affected: 0
+        comment: "RLS prevents updating other users' objects (0 rows affected)"
+
+  - description: "Authenticated user can only DELETE own objects"
+    setup:
+      - policy: objects_owner_delete
+    asserts:
+      - action: DELETE
+        as: { role: authenticated, sub: user-1 }
+        from: storage.objects
+        where: "owner_id = 'user-1'"
+        expect: success
+        comment: "User can delete their own objects"
+
+      - action: DELETE
+        as: { role: authenticated, sub: user-1 }
+        from: storage.objects
+        where: "owner_id = 'user-2'"
+        expect: success
+        rows_affected: 0
+        comment: "RLS prevents deleting other users' objects (0 rows affected)"
+
+  - description: "All authenticated users can SELECT buckets"
+    setup:
+      - policy: buckets_public_select
+    asserts:
+      - action: SELECT
+        as: { role: authenticated, sub: user-1 }
+        from: storage.buckets
+        expect: rows
+        comment: "User-1 can see all buckets"
+
+      - action: SELECT
+        as: { role: authenticated, sub: user-2 }
+        from: storage.buckets
+        expect: rows
+        comment: "User-2 can see all buckets"
+
+  - description: "Authenticated user can only INSERT buckets with own owner_id"
+    setup:
+      - policy: buckets_owner_insert
+    asserts:
+      - action: INSERT
+        as: { role: authenticated, sub: user-1 }
+        into: storage.buckets
+        values:
+          id: gen_random_uuid()
+          name: user1-bucket
+          owner_id: user-1
+          public: false
+        expect: success
+        comment: "User can create bucket with own owner_id"
+
+      - action: INSERT
+        as: { role: authenticated, sub: user-1 }
+        into: storage.buckets
+        values:
+          id: gen_random_uuid()
+          name: user2-bucket-fake
+          owner_id: user-2
+          public: false
+        expect: error
+        error_pattern: "new row violates row-level security policy"
+        comment: "User cannot create bucket with another user's owner_id"
