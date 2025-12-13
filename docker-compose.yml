@@ -233,6 +233,66 @@ services:
       retries: 3
       start_period: 40s
 
+  # ============================================================
+  # Docker Socket Proxy - Filters Docker API access
+  # ============================================================
+
+  docker-socket-proxy:
+    image: lscr.io/linuxserver/socket-proxy:latest
+    container_name: launchdb-socket-proxy
+    restart: unless-stopped
+    networks:
+      - launchdb-internal
+    environment:
+      # Required for container lifecycle
+      CONTAINERS: 1
+      POST: 1              # Enable write operations
+      ALLOW_START: 1       # POST /containers/{id}/start
+      ALLOW_STOP: 1        # POST /containers/{id}/stop
+      ALLOW_RESTARTS: 1    # POST /containers/{id}/restart, /kill
+
+      # Required for PgBouncer exec
+      EXEC: 1              # POST /containers/{id}/exec
+
+      # Required for network discovery
+      NETWORKS: 1          # GET /networks
+
+      # Required for image pulls (if needed)
+      IMAGES: 1            # GET/POST /images
+
+      # Required for healthcheck
+      PING: 1              # /_ping endpoint
+
+      # Keep disabled (security)
+      AUTH: 0
+      SECRETS: 0
+      SERVICES: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+      VOLUMES: 0           # We use named volumes, no API needed
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      NODES: 0
+      PLUGINS: 0
+      SESSION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /run
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2375/_ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ============================================================
+  # PostgREST Manager - Dynamic PostgREST spawning
+  # ============================================================
+
   postgrest-manager:
     image: abushadaf/launchdb-postgrest-manager:latest
     # build: ./infrastructure/postgrest-manager
@@ -254,11 +314,13 @@ services:
       HOST_CONFIG_DIR: ${HOST_CONFIG_DIR}
       # Domain for OpenAPI spec (optional, passed to PostgREST containers)
       DOMAIN: ${DOMAIN}
+      # Docker API access via socket-proxy (filtered, secure)
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./infrastructure/scripts:/scripts:ro
       - postgrest-projects:/etc/postgrest/projects
     depends_on:
+      - docker-socket-proxy
       - postgres
       - pgbouncer
     healthcheck:
