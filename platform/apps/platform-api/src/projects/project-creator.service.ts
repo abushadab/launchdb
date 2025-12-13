@@ -239,15 +239,12 @@ export class ProjectCreatorService {
     secrets: any,
     _dbInfo: any,
   ): Promise<void> {
-    this.logger.log(`Step 7: PostgREST config generation and container spawn for ${projectId}`);
-
-    // Generate PostgREST config file
-    await this.postgrestService.generateConfig(projectId);
+    this.logger.log(`Step 7: PostgREST container spawn for ${projectId}`);
 
     // Spawn per-project PostgREST container
-    // Manager will add PgBouncer database/user entries using dbPassword
+    // Manager fetches secrets, generates config, and handles PgBouncer registration
     try {
-      await this.postgrestManagerService.spawnContainer(projectId, secrets.dbPassword);
+      await this.postgrestManagerService.spawnContainer(projectId);
       this.logger.log(`Step 7 complete: PostgREST container spawned for ${projectId}`);
     } catch (error) {
       // Mark project as 'failed' (no rollback per Codex guidance)

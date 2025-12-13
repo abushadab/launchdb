@@ -40,19 +40,16 @@ export class PostgRestManagerService {
   /**
    * Spawn per-project PostgREST container
    * POST /internal/postgrest/spawn
-   * Manager will add PgBouncer database/user entries using authenticatorPassword
+   * Manager fetches secrets from platform DB and handles all configuration
    */
-  async spawnContainer(projectId: string, authenticatorPassword: string): Promise<SpawnResponse> {
+  async spawnContainer(projectId: string): Promise<SpawnResponse> {
     this.logger.log(`Spawning PostgREST container for project ${projectId}`);
 
     try {
       const response = await firstValueFrom(
         this.httpService.post<SpawnResponse>(
           `${this.managerUrl}/internal/postgrest/spawn`,
-          {
-            projectId,
-            authenticatorPassword, // Manager uses this to configure PgBouncer
-          },
+          { projectId },
           {
             headers: {
               'X-Internal-Key': this.internalApiKey,
