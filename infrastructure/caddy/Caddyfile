@@ -149,7 +149,7 @@ http://{$DOMAIN} {
     # ============================================================
 
     handle /* {
-        respond "LaunchDB v0.1.10 - API running. Dashboard coming in v0.2.0.
+        respond "LaunchDB - API running.
 
 Available endpoints:
 - POST /api/projects - Create project
