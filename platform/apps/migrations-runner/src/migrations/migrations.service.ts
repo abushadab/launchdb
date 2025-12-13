@@ -4,15 +4,11 @@
  * Per interfaces.md §5 and v1-decisions.md §17
  */
 
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '@launchdb/common/database';
 import { CryptoService } from '@launchdb/common/crypto';
+import { ERRORS } from '@launchdb/common/errors';
 import { Pool } from 'pg';
 import { MigrationLoaderService, Migration } from './migration-loader.service';
 import { RunMigrationsResponseDto, MigrationResult } from './dto/run-migrations.dto';
@@ -45,19 +41,20 @@ export class MigrationsService {
     );
 
     if (!project) {
-      throw new NotFoundException(`Project not found: ${projectId}`);
+      throw ERRORS.ProjectNotFound(projectId);
     }
 
     if (project.status !== 'provisioning' && project.status !== 'active') {
-      throw new BadRequestException(
+      throw ERRORS.ValidationError(
         `Cannot run migrations on project with status: ${project.status}`,
+        projectId,
       );
     }
 
     // Get all migrations
     const migrations = this.migrationLoader.getMigrations();
     if (migrations.length === 0) {
-      throw new BadRequestException('No migrations found');
+      throw ERRORS.ValidationError('No migrations found');
     }
 
     // Get project database pool (with admin privileges)
@@ -266,7 +263,7 @@ export class MigrationsService {
       const adminDsn = this.configService.get<string>('adminDbDsn');
 
       if (!adminDsn) {
-        throw new Error('ADMIN_DB_DSN not configured');
+        throw ERRORS.InternalError('ADMIN_DB_DSN not configured');
       }
 
       // Parse admin DSN and replace database name
@@ -274,7 +271,7 @@ export class MigrationsService {
       try {
         url = new URL(adminDsn);
       } catch (error) {
-        throw new Error(`Invalid ADMIN_DB_DSN format: ${error.message}`);
+        throw ERRORS.InternalError(`Invalid ADMIN_DB_DSN format: ${error.message}`);
       }
       url.pathname = `/${dbName}`;
 

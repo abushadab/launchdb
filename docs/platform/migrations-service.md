@@ -5,7 +5,7 @@ The Migrations Service manages database schema migrations for per-project databa
 ## Base URL
 
 ```
-http://localhost:3003
+http://localhost:8002
 ```
 
 ## Architecture
@@ -65,11 +65,11 @@ Health check endpoint for monitoring.
 
 Execute all pending migrations for a project. This is an internal endpoint called by the Platform API during project creation.
 
-**Authentication:** Required (INTERNAL_API_KEY in X-Internal-Key header)
+**Authentication:** Required (INTERNAL_API_KEY in X-Internal-API-Key header)
 
 **Headers:**
 ```
-X-Internal-Key: <INTERNAL_API_KEY>
+X-Internal-API-Key: <INTERNAL_API_KEY>
 Content-Type: application/json
 ```
 
@@ -117,13 +117,13 @@ Content-Type: application/json
 - `migrations_applied`: Number of new migrations executed
 - `migrations_skipped`: Number of already-applied migrations (based on checksum)
 - `total_duration_ms`: Total time for all migrations
-- `status`: "success" (all passed), "partial" (some failed), "failed" (first migration failed)
+- `status`: "success" (all passed), "no_changes" (already applied), "failed" (migration failed)
 - `results`: Array of per-migration results
 
 **Status Values:**
 - `success`: All migrations applied successfully
-- `partial`: Some migrations applied, one or more failed
-- `failed`: First migration failed, execution stopped
+- `no_changes`: No new migrations to apply (all already applied)
+- `failed`: Migration failed, execution stopped
 
 **Error Responses:**
 
@@ -170,8 +170,8 @@ Creates the authentication schema with full user management capabilities.
 - `auth.email_verification_tokens` - Email verification tokens
 
 **Helper Functions:**
-- `auth.uid()` - Returns current authenticated user ID from JWT
-- `auth.role()` - Returns current user role ('anon', 'authenticated', 'service_role')
+- `auth.uid()` - Returns current authenticated user ID from JWT (NULL-safe)
+- `auth.role()` - Returns current user role ('anon', 'authenticated', 'service_role', NULL-safe)
 
 **RLS Policies:**
 - Users can read/update their own data
@@ -219,7 +219,7 @@ SELECT * FROM storage.objects WHERE owner_id = auth.uid();
 
 -- List public files in avatars bucket
 SELECT * FROM storage.objects o
-JOIN storage.buckets b ON o.bucket_id = b.id
+JOIN storage.buckets b ON o.bucket = b.name
 WHERE b.name = 'avatars' AND b.public = true;
 ```
 
@@ -232,9 +232,8 @@ Sets up the `public` schema with RLS helpers and an example table.
 **Schema:** `public`
 
 **Helper Functions:**
-- `public.auth_uid()` - Current user ID
-- `public.auth_role()` - Current user role
-- `public.auth_email()` - Current user email
+- `public.auth_uid()` - Current user ID (calls auth.uid())
+- `public.auth_role()` - Current user role (calls auth.role())
 
 **Example Table:** `public.example_todos`
 - Demonstrates RLS patterns
@@ -274,14 +273,16 @@ CREATE POLICY posts_insert_own ON public.posts
 
 ## Migration State Tracking
 
-Migrations are tracked in the `migration_state` table (created automatically):
+Migrations are tracked in the `platform.migration_state` table (created automatically):
 
 ```sql
-CREATE TABLE migration_state (
-  name TEXT PRIMARY KEY,
+CREATE TABLE platform.migration_state (
+  id SERIAL PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  migration_name TEXT NOT NULL,
   checksum TEXT NOT NULL,
-  executed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  duration_ms INTEGER NOT NULL
+  executed_at TIMESTAMP NOT NULL DEFAULT now(),
+  UNIQUE (project_id, migration_name)
 );
 ```
 
@@ -434,7 +435,46 @@ Migrations create three PostgreSQL roles for each project:
 
 ---
 
+## Environment Variables
+
+**Required:**
+- `PLATFORM_DB_DSN`: PostgreSQL connection string for platform database
+- `ADMIN_DB_DSN`: PostgreSQL connection string with admin privileges for running migrations
+- `INTERNAL_API_KEY`: Secret key for internal service-to-service authentication
+- `MIGRATIONS_RUNNER_PORT`: Service port (default: 8002)
+
+See [Environment Variables Documentation](./platform-env-vars.md) for full reference.
+
+---
+
 ## Error Handling
+
+The Migrations Service uses the centralized `@launchdb/common/errors` library for consistent error responses.
+
+**Error Factory Functions Used:**
+```typescript
+import { ERRORS } from '@launchdb/common/errors';
+
+// Project not found
+throw ERRORS.ProjectNotFound(projectId);
+
+// Invalid project status
+throw ERRORS.ValidationError('Cannot run migrations on project with status: deleted', projectId);
+
+// No migrations found
+throw ERRORS.ValidationError('No migrations found');
+
+// Invalid credentials (API key)
+throw ERRORS.InvalidCredentials();
+
+// Internal errors (config, DSN parsing)
+throw ERRORS.InternalError('ADMIN_DB_DSN not configured');
+```
+
+**LaunchDbErrorFilter:**
+The service registers `LaunchDbErrorFilter` globally to convert LaunchDbError instances to proper HTTP responses with correct status codes.
+
+---
 
 ### Migration Failures
 
@@ -531,15 +571,17 @@ docker logs launchdb-migrations-runner
 psql -d proj_802682481788fe51
 
 -- View applied migrations
-SELECT * FROM migration_state ORDER BY executed_at;
+SELECT * FROM platform.migration_state
+WHERE project_id = 'proj_802682481788fe51'
+ORDER BY executed_at;
 
 -- Check migration status
 SELECT
-  name,
+  migration_name,
   executed_at,
-  duration_ms,
   LEFT(checksum, 8) as checksum_prefix
-FROM migration_state;
+FROM platform.migration_state
+WHERE project_id = 'proj_802682481788fe51';
 ```
 
 ---
@@ -549,16 +591,16 @@ FROM migration_state;
 ### Local Development
 
 ```bash
-# Migrations Service runs on port 3003
-curl http://localhost:3003/health
+# Migrations Service runs on port 8002
+curl http://localhost:8002/health
 ```
 
 ### Test Migration Execution
 
 ```bash
 # Run migrations for a project (requires INTERNAL_API_KEY)
-curl -X POST http://localhost:3003/internal/migrations/run \
-  -H "X-Internal-Key: your-internal-api-key" \
+curl -X POST http://localhost:8002/internal/migrations/run \
+  -H "X-Internal-API-Key: your-internal-api-key" \
   -H "Content-Type: application/json" \
   -d '{"project_id":"proj_802682481788fe51"}'
 ```
@@ -578,8 +620,8 @@ psql postgresql://proj_xxx_authenticator:password@localhost:6432/proj_xxx
 # List storage tables
 \dt storage.*
 
-# List migration state
-SELECT * FROM migration_state;
+# List migration state for project
+SELECT * FROM platform.migration_state WHERE project_id = 'proj_xxx';
 ```
 
 ---
@@ -605,8 +647,9 @@ docker logs launchdb-migrations-runner
 psql -d platform -c "SELECT id, status FROM platform.projects WHERE id = 'proj_xxx';"
 
 # Manually run migrations
-curl -X POST http://localhost:3003/internal/migrations/run \
-  -H "X-Internal-Key: your-key" \
+curl -X POST http://localhost:8002/internal/migrations/run \
+  -H "X-Internal-API-Key: your-key" \
+  -H "Content-Type: application/json" \
   -d '{"project_id":"proj_xxx"}'
 ```
 
@@ -621,12 +664,13 @@ curl -X POST http://localhost:3003/internal/migrations/run \
 **Solution:**
 ```sql
 -- Option 1: Reset migration state (DANGER: reapplies migration)
-DELETE FROM migration_state WHERE name = '001_auth_schema';
+DELETE FROM platform.migration_state
+WHERE project_id = 'proj_xxx' AND migration_name = '001_auth_schema';
 
 -- Option 2: Update checksum (if change is intentional and safe)
-UPDATE migration_state
+UPDATE platform.migration_state
 SET checksum = 'new_checksum_value'
-WHERE name = '001_auth_schema';
+WHERE project_id = 'proj_xxx' AND migration_name = '001_auth_schema';
 ```
 
 ---

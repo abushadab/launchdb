@@ -15,7 +15,7 @@
 
 ## Introduction
 
-LaunchDB is a multi-tenant PostgreSQL-as-a-Service platform that provides isolated database instances with automatic RESTful API generation via PostgREST. The architecture is designed for single-VPS deployment in v1, with emphasis on security isolation, connection efficiency, and operational simplicity.
+LaunchDB is a multi-tenant PostgreSQL-as-a-Service platform that provides isolated database instances with automatic RESTful API generation via PostgREST. The architecture is designed for single-VPS deployment in v0.1.x, with emphasis on security isolation, connection efficiency, and operational simplicity.
 
 ## High-Level Architecture
 
@@ -144,23 +144,30 @@ LaunchDB is a multi-tenant PostgreSQL-as-a-Service platform that provides isolat
 
 **Port:** 8002 (internal)
 
-### Auth Service (Supabase Auth)
+### Auth Service (NestJS)
 
 **Responsibilities:**
-- User authentication (email/password, OAuth)
+- Per-project user authentication (email/password)
 - JWT token generation and validation
-- Session management
+- Session and refresh token management
+- Password reset and email verification
 
-**Port:** 8001 (internal)
+**Tech Stack:** NestJS, TypeScript, Argon2id password hashing
 
-### Storage Service (Supabase Storage)
+**Port:** 8001 (public)
+
+### Storage Service (NestJS)
 
 **Responsibilities:**
-- File upload and download
-- S3-compatible API
-- Per-project storage buckets
+- Per-project file upload and download
+- Disk-based file storage with metadata in PostgreSQL
+- Bucket-based organization
+- Signed URLs for temporary access
+- RLS-protected file access control
 
-**Port:** 8003 (internal)
+**Tech Stack:** NestJS, TypeScript, Filesystem storage
+
+**Port:** 8003 (public)
 
 ## PostgREST Per-Project Topology
 
@@ -290,7 +297,7 @@ Manager API is **internal-only** and protected by API key authentication.
 
 **Authentication:**
 ```http
-X-Internal-Key: <INTERNAL_API_KEY>
+X-Internal-API-Key: <INTERNAL_API_KEY>
 ```
 
 ### Key Endpoints
@@ -340,7 +347,7 @@ Manager API executes shell scripts mounted as read-only volumes:
 
 ```yaml
 volumes:
-  - ./scripts:/scripts:ro
+  - ./infrastructure/scripts:/scripts:ro
 ```
 
 **Scripts:**
@@ -358,8 +365,8 @@ volumes:
 
 ```
 1. Client → Platform API: POST /api/projects
-2. Platform API → PostgreSQL: Insert project record (status="creating")
-3. Platform API → Migrations API: POST /migrations/apply
+2. Platform API → PostgreSQL: Insert project record (status="provisioning")
+3. Platform API → Migrations API: POST /internal/migrations/run
 4. Migrations API → PostgreSQL: Create database, apply schemas
 5. Platform API → Manager API: POST /internal/postgrest/:id/spawn
 6. Manager API → PgBouncer: Register database and user
@@ -404,8 +411,8 @@ volumes:
 - Authenticated role: `authenticated` (authenticated API access)
 
 **Password Storage:**
-- PgBouncer userlist: MD5 hashed passwords
-- Platform database: Encrypted with master key
+- PgBouncer userlist: SCRAM-SHA-256 hashed passwords
+- Platform database: Encrypted with AES-256-GCM (master key)
 
 ### API Key Security
 
@@ -437,7 +444,7 @@ volumes:
 - Memory per container: ~50MB
 - Can support 50-100 projects on typical VPS
 
-### Future Scaling Options (v2+)
+### Future Scaling Options (v0.2.0+)
 
 1. **Horizontal Scaling:**
    - Multiple PostgreSQL instances (sharding by project)

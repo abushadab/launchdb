@@ -7,10 +7,10 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
-  UnauthorizedException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ERRORS } from '@launchdb/common/errors';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -34,7 +34,7 @@ export class InternalApiKeyGuard implements CanActivate {
 
     if (!apiKey) {
       this.logger.warn('Missing X-Internal-API-Key header');
-      throw new UnauthorizedException('Missing internal API key');
+      throw ERRORS.InvalidCredentials();
     }
 
     const apiKeyBuffer = Buffer.from(apiKey);
@@ -45,7 +45,7 @@ export class InternalApiKeyGuard implements CanActivate {
       !crypto.timingSafeEqual(apiKeyBuffer, expectedKeyBuffer)
     ) {
       this.logger.warn('Invalid X-Internal-API-Key provided');
-      throw new UnauthorizedException('Invalid internal API key');
+      throw ERRORS.InvalidCredentials();
     }
 
     return true;

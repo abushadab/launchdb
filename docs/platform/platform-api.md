@@ -343,8 +343,8 @@ Get connection credentials and service URLs for a project.
   "anon_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "service_role_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "postgrest_url": "http://localhost:8000/db/proj_802682481788fe51",
-  "auth_url": "http://localhost:3001/auth/proj_802682481788fe51",
-  "storage_url": "http://localhost:3002/storage/proj_802682481788fe51"
+  "auth_url": "http://localhost:8001/auth/proj_802682481788fe51",
+  "storage_url": "http://localhost:8003/storage/proj_802682481788fe51"
 }
 ```
 
@@ -527,10 +527,11 @@ curl -X GET http://localhost:8000/db/proj_802682481788fe51/users \
 
 | Status | Description |
 |--------|-------------|
+| `provisioning` | Project is being created (transient state) |
 | `active` | Project is running and accessible |
-| `deleted` | Project has been soft-deleted |
-| `creating` | Project is being created (transient state) |
+| `suspended` | Project has been temporarily disabled |
 | `failed` | Project creation failed |
+| `deleted` | Project has been soft-deleted |
 
 ---
 
@@ -556,9 +557,48 @@ CORS is not configured in v1. Configure CORS in production using:
 1. **HTTPS Required:** Always use HTTPS in production
 2. **Token Storage:** Store JWT tokens securely (HttpOnly cookies or secure storage)
 3. **Token Expiration:** Tokens expire after 7 days (604800 seconds)
-4. **Password Security:** Passwords are hashed using bcrypt (10 rounds)
+4. **Password Security:** Owner passwords are hashed using Argon2id
 5. **Connection Credentials:** Service role keys grant admin access - store securely
 6. **PostgREST Auth:** Use anon_key for client-side, service_role_key for server-side only
+7. **Error Handling:** Uses centralized ERRORS factory for consistent error responses
+
+---
+
+## Environment Variables
+
+**Required:**
+- `PLATFORM_DB_DSN`: PostgreSQL connection string for platform database
+- `PLATFORM_API_PORT`: Service port (default: 8000)
+- `JWT_SECRET`: Secret for signing owner authentication tokens
+- `POSTGREST_URL`: Base URL for PostgREST proxy (e.g., `http://localhost:8000`)
+- `AUTH_SERVICE_URL`: Base URL for auth service (e.g., `http://localhost:8001`)
+- `STORAGE_SERVICE_URL`: Base URL for storage service (e.g., `http://localhost:8003`)
+- `INTERNAL_API_KEY`: Secret key for internal service-to-service authentication
+
+See [Environment Variables Documentation](./platform-env-vars.md) for full reference.
+
+---
+
+## Error Handling
+
+The Platform API uses the centralized `@launchdb/common/errors` library for consistent error responses.
+
+**Error Factory Functions Used:**
+```typescript
+import { ERRORS } from '@launchdb/common/errors';
+
+// Project not found
+throw ERRORS.ProjectNotFound(projectId);
+
+// Access denied (not the owner)
+throw ERRORS.AccessDenied(projectId);
+
+// Internal errors
+throw ERRORS.InternalError('Secret not found: jwt_secret');
+```
+
+**LaunchDbErrorFilter:**
+The service registers `LaunchDbErrorFilter` globally to convert LaunchDbError instances to proper HTTP responses with correct status codes.
 
 ---
 

@@ -11,7 +11,7 @@ These variables MUST be set in production:
 | `LAUNCHDB_MASTER_KEY` | Base64-encoded 32-byte key for encrypting secrets | `base64-encoded-key-here` |
 | `PLATFORM_DB_DSN` | PostgreSQL connection string for platform database | `postgresql://user:pass@localhost:5432/platform` |
 | `ADMIN_DB_DSN` | PostgreSQL admin connection string for creating project databases | `postgresql://postgres:pass@localhost:5432/postgres` |
-| `PLATFORM_JWT_SECRET` | Secret for signing platform owner JWT tokens | `your-secure-random-string` |
+| `JWT_SECRET` | Secret for signing platform owner JWT tokens | `your-secure-random-string` |
 | `INTERNAL_API_KEY` | Shared secret for internal service-to-service communication | `your-internal-api-key` |
 
 ---
@@ -141,7 +141,7 @@ LAUNCHDB_MASTER_KEY=6K8/sN5vT9mR2pL4cX7yB3nH8wE1qA5jF4gD9kM0vZ8=
 **Required:** Yes
 **Default:** `change-me-in-production` (insecure!)
 
-**Description:** Shared secret for authenticating internal service-to-service communication. Used in `X-Internal-Key` header.
+**Description:** Shared secret for authenticating internal service-to-service communication. Used in `X-Internal-API-Key` header.
 
 **Generation:**
 ```bash
@@ -162,7 +162,7 @@ INTERNAL_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
 
 ---
 
-### `PLATFORM_JWT_SECRET`
+### `JWT_SECRET`
 
 **Type:** String
 **Required:** Yes
@@ -178,12 +178,12 @@ openssl rand -base64 64
 
 **Example:**
 ```bash
-PLATFORM_JWT_SECRET=Hs8Kq3Nv9Rz2Bm7Cw1Xp6Yt4Jf0Lg5De8Pn3Qu7Am2Sv9Wk6
+JWT_SECRET=Hs8Kq3Nv9Rz2Bm7Cw1Xp6Yt4Jf0Lg5De8Pn3Qu7Am2Sv9Wk6
 ```
 
 **Used by:** Platform API (owner authentication)
 
-**Note:** This is separate from per-project JWT secrets.
+**Note:** This is separate from per-project JWT secrets which are stored in the secrets table.
 
 ---
 
@@ -497,7 +497,7 @@ PROJECTS_DB_PORT=6432
 # Security (INSECURE - for development only!)
 LAUNCHDB_MASTER_KEY=dev_master_key_base64_32_bytes_here==
 INTERNAL_API_KEY=dev-internal-api-key
-PLATFORM_JWT_SECRET=dev-platform-jwt-secret
+JWT_SECRET=dev-platform-jwt-secret
 
 # Service Ports
 PLATFORM_API_PORT=8000
@@ -538,7 +538,7 @@ PROJECTS_DB_PORT=6432
 # Security (REPLACE WITH REAL SECRETS!)
 LAUNCHDB_MASTER_KEY=${MASTER_KEY_FROM_VAULT}
 INTERNAL_API_KEY=${INTERNAL_KEY_FROM_VAULT}
-PLATFORM_JWT_SECRET=${JWT_SECRET_FROM_VAULT}
+JWT_SECRET=${JWT_SECRET_FROM_VAULT}
 
 # Service Ports (internal network)
 PLATFORM_API_PORT=8000

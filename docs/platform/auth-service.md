@@ -5,7 +5,7 @@ The Auth Service provides per-project user authentication and authorization. Eac
 ## Base URL
 
 ```
-http://localhost:3001
+http://localhost:8001
 ```
 
 ## Architecture
@@ -86,12 +86,12 @@ Register a new user for the project.
   "email": "user@example.com",
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expires_in": 3600
+  "expires_in": 900
 }
 ```
 
 **Token Details:**
-- `access_token`: Valid for 1 hour (3600 seconds)
+- `access_token`: Valid for 15 minutes (900 seconds)
 - `refresh_token`: Valid for 7 days, used to obtain new access tokens
 
 **Error Responses:**
@@ -152,7 +152,7 @@ Authenticate an existing user.
   "email": "user@example.com",
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expires_in": 3600
+  "expires_in": 900
 }
 ```
 
@@ -201,7 +201,7 @@ Obtain a new access token using a refresh token.
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expires_in": 3600
+  "expires_in": 900
 }
 ```
 
@@ -324,7 +324,7 @@ Authorization: Bearer <access_token>
 
 ### Access Token
 
-**Type:** Short-lived (1 hour)
+**Type:** Short-lived (15 minutes)
 
 **Claims:**
 
@@ -379,7 +379,7 @@ The Auth Service integrates with the Platform API for JWT secret management:
 
 ## Database Schema
 
-Users are stored in the per-project database in the `auth.users` table:
+Users are stored in the per-project database in the `auth` schema:
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS auth;
@@ -392,11 +392,22 @@ CREATE TABLE auth.users (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE auth.sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  last_activity_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE auth.refresh_tokens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES auth.sessions(id) ON DELETE CASCADE,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   token_hash VARCHAR(255) NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 ```
@@ -410,7 +421,7 @@ CREATE TABLE auth.refresh_tokens (
    - At least one uppercase letter
    - At least one lowercase letter
    - At least one number
-   - Hashed using bcrypt (10 rounds)
+   - Hashed using Argon2id (timeCost: 2, memoryCost: 64MB)
 
 2. **Token Security:**
    - Access tokens are short-lived (1 hour)
@@ -422,13 +433,68 @@ CREATE TABLE auth.refresh_tokens (
    - Always use HTTPS in production
    - Tokens transmitted in headers (not URL parameters)
 
-4. **Rate Limiting:**
+4. **Error Handling:**
+   - Uses centralized ERRORS factory for consistent error responses
+   - LaunchDbErrorFilter registered for proper HTTP status codes
+   - All errors return standardized LaunchDbError format
+
+5. **Rate Limiting:**
    - Consider rate limiting login/signup endpoints
    - Implement account lockout after failed attempts (v1.1)
 
-5. **Email Verification:**
+6. **Email Verification:**
    - v1 does not implement email verification
    - Consider adding email verification in production (v1.1)
+
+---
+
+## Environment Variables
+
+**Required:**
+- `PLATFORM_DB_DSN`: PostgreSQL connection string for platform database
+- `CORS_ORIGIN`: Allowed CORS origin for client applications
+- `AUTH_SERVICE_PORT`: Service port (default: 8001)
+
+**Optional:**
+- `JWT_SECRET`: Global JWT secret (per-project secrets override this)
+
+See [Environment Variables Documentation](./platform-env-vars.md) for full reference.
+
+---
+
+## Error Handling
+
+The Auth Service uses the centralized `@launchdb/common/errors` library for consistent error responses.
+
+**Error Factory Pattern:**
+```typescript
+import { ERRORS } from '@launchdb/common/errors';
+
+// User already exists
+throw ERRORS.UserAlreadyExists(email);
+
+// Invalid credentials
+throw ERRORS.InvalidCredentials();
+
+// Token invalid/expired
+throw ERRORS.TokenInvalid();
+
+// User not found
+throw ERRORS.UserNotFound(userId);
+
+// Project not found
+throw ERRORS.ProjectNotFound(projectId);
+```
+
+**LaunchDbErrorFilter:**
+The service registers `LaunchDbErrorFilter` globally to convert LaunchDbError instances to proper HTTP responses with correct status codes.
+
+**Common Error Codes:**
+- 400: Validation errors, malformed requests
+- 401: Invalid credentials, expired/revoked tokens
+- 404: Project not found, user not found
+- 409: Email already registered
+- 500: Internal server errors
 
 ---
 
@@ -589,7 +655,7 @@ class AuthClient {
 }
 
 // Usage
-const auth = new AuthClient('http://localhost:3001', 'proj_802682481788fe51');
+const auth = new AuthClient('http://localhost:8001', 'proj_802682481788fe51');
 
 // Signup
 await auth.signup('user@example.com', 'SecurePass123');
@@ -614,31 +680,31 @@ await auth.logout();
 ### Local Development
 
 ```bash
-# Auth Service runs on port 3001
-curl http://localhost:3001/health
+# Auth Service runs on port 8001
+curl http://localhost:8001/health
 ```
 
 ### Test Flow
 
 ```bash
 # 1. Signup
-curl -X POST http://localhost:3001/auth/proj_802682481788fe51/signup \
+curl -X POST http://localhost:8001/auth/proj_802682481788fe51/signup \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"TestPass123"}'
 
 # Response includes access_token and refresh_token
 
 # 2. Get user info
-curl -X GET http://localhost:3001/auth/proj_802682481788fe51/user \
+curl -X GET http://localhost:8001/auth/proj_802682481788fe51/user \
   -H "Authorization: Bearer <access_token>"
 
 # 3. Refresh token (after access_token expires)
-curl -X POST http://localhost:3001/auth/proj_802682481788fe51/refresh \
+curl -X POST http://localhost:8001/auth/proj_802682481788fe51/refresh \
   -H "Content-Type: application/json" \
   -d '{"refresh_token":"<refresh_token>"}'
 
 # 4. Logout
-curl -X POST http://localhost:3001/auth/proj_802682481788fe51/logout \
+curl -X POST http://localhost:8001/auth/proj_802682481788fe51/logout \
   -H "Content-Type: application/json" \
   -d '{"refresh_token":"<refresh_token>"}'
 ```

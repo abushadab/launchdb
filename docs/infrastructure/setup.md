@@ -181,42 +181,49 @@ launchdb/
 ├── .env                        # Environment variables (create from .env.example)
 ├── .env.example                # Template for environment variables
 │
-├── postgres/
-│   └── init/                   # PostgreSQL initialization scripts
+├── infrastructure/             # Infrastructure components
+│   ├── postgres/
+│   │   └── init/               # PostgreSQL initialization scripts
+│   │
+│   ├── pgbouncer/
+│   │   ├── Dockerfile          # PgBouncer container image
+│   │   ├── pgbouncer.ini       # PgBouncer configuration
+│   │   ├── userlist.txt        # PgBouncer user authentication
+│   │   └── entrypoint.sh       # Container entrypoint script
+│   │
+│   ├── postgrest/
+│   │   ├── Dockerfile          # PostgREST image
+│   │   └── projects/           # Per-project config files (generated)
+│   │
+│   ├── postgrest-manager/
+│   │   ├── Dockerfile          # Manager API container image
+│   │   ├── index.js            # Manager API server
+│   │   └── package.json        # Node.js dependencies
+│   │
+│   ├── scripts/
+│   │   ├── pgbouncer-add-project.sh
+│   │   ├── pgbouncer-add-user.sh
+│   │   ├── pgbouncer-remove-project.sh
+│   │   ├── pgbouncer-remove-user.sh
+│   │   └── postgrest-spawn.sh
+│   │
+│   ├── caddy/
+│   │   └── Caddyfile           # Reverse proxy configuration
+│   │
+│   └── backup/
+│       ├── Dockerfile
+│       ├── backup.sh
+│       └── restore.sh
 │
-├── pgbouncer/
-│   ├── Dockerfile              # PgBouncer container image
-│   ├── pgbouncer.ini           # PgBouncer configuration
-│   ├── userlist.txt            # PgBouncer user authentication
-│   └── entrypoint.sh           # Container entrypoint script
-│
-├── postgrest/
-│   ├── template.conf           # PostgREST configuration template
-│   └── projects/               # Per-project config files (generated)
-│
-├── postgrest-manager/
-│   ├── Dockerfile              # Manager API container image
-│   ├── index.js                # Manager API server
-│   └── package.json            # Node.js dependencies
-│
-├── scripts/
-│   ├── pgbouncer-add-project.sh
-│   ├── pgbouncer-add-user.sh
-│   ├── pgbouncer-remove-project.sh
-│   ├── pgbouncer-remove-user.sh
-│   └── postgrest-spawn.sh
-│
-├── platform/                   # Platform API (NestJS)
+├── platform/                   # Platform services (NestJS monorepo)
+│   ├── apps/
+│   │   ├── platform-api/       # Main API
+│   │   ├── auth-service/       # Authentication
+│   │   ├── storage-service/    # File storage
+│   │   └── migrations-runner/  # Database migrations
+│   ├── libs/                   # Shared libraries
 │   ├── Dockerfile
-│   ├── package.json
-│   └── src/
-│
-├── auth/                       # Auth service
-├── storage/                    # Storage service
-├── migrations/                 # Migrations service
-│
-├── caddy/
-│   └── Caddyfile               # Reverse proxy configuration
+│   └── package.json
 │
 └── docs/                       # Documentation
     ├── architecture.md
@@ -251,8 +258,8 @@ DOMAIN=yourdomain.com
 ACME_EMAIL=admin@yourdomain.com
 
 # Docker Host Paths (absolute paths required)
-HOST_SCRIPT_DIR=/root/launchdb/scripts
-HOST_CONFIG_DIR=/root/launchdb/postgrest/projects
+HOST_SCRIPT_DIR=/opt/launchdb/infrastructure/scripts
+HOST_CONFIG_DIR=/opt/launchdb/infrastructure/postgrest/projects
 
 # Optional SMTP (for email features)
 SMTP_HOST=smtp.sendgrid.net
@@ -278,7 +285,7 @@ sed -i "s/LAUNCHDB_MASTER_KEY=.*/LAUNCHDB_MASTER_KEY=$(openssl rand -hex 32)/" .
 
 ### 4. Configure PgBouncer
 
-Initial `pgbouncer/userlist.txt` should contain the platform user:
+Initial `infrastructure/pgbouncer/userlist.txt` should contain the platform user:
 
 ```
 "postgres" "md5<md5_hash_of_password+username>"
@@ -293,7 +300,7 @@ USERNAME="postgres"
 echo -n "md5$(echo -n "${PASSWORD}${USERNAME}" | md5sum | cut -d' ' -f1)"
 ```
 
-Update `pgbouncer/userlist.txt`:
+Update `infrastructure/pgbouncer/userlist.txt`:
 
 ```
 "postgres" "md5abc123def456..."
@@ -308,8 +315,8 @@ services:
   postgres:         # PostgreSQL database
   pgbouncer:        # Connection pooler
   platform-api:     # Main API
-  auth:             # Authentication
-  storage:          # File storage
+  auth-service:     # Authentication
+  storage-service:  # File storage
   migrations:       # Database migrations
   postgrest-manager:# Container orchestration
   reverse-proxy:    # Caddy (TLS + routing)
@@ -335,8 +342,8 @@ reverse-proxy → platform-api → pgbouncer → postgres
               postgrest-manager → postgres
                               ↓
               migrations → postgres
-              auth → postgres
-              storage → postgres
+              auth-service → postgres
+              storage-service → postgres
 ```
 
 **Health Checks:** Services wait for dependencies to be healthy before starting.
@@ -359,10 +366,10 @@ volumes:
 
 ```yaml
 # Configuration files (read-only where possible)
-./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
-./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt
-./scripts:/scripts:ro
-./postgrest/projects:/etc/postgrest/projects:ro
+./infrastructure/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
+./infrastructure/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt
+./infrastructure/scripts:/scripts:ro
+./infrastructure/postgrest/projects:/etc/postgrest/projects:ro
 
 # Docker socket (Manager API needs container control)
 /var/run/docker.sock:/var/run/docker.sock:ro
@@ -382,7 +389,7 @@ docker run --rm \
 
 # Backup configuration
 tar czf config-backup-$(date +%Y%m%d).tar.gz \
-  .env pgbouncer/ caddy/ scripts/
+  .env infrastructure/
 ```
 
 ## Networking
@@ -403,7 +410,7 @@ Services can communicate using service names:
 
 ```
 platform-api → pgbouncer:6432
-platform-api → auth:8001
+platform-api → auth-service:8001
 postgrest-manager → postgres:5432
 postgrest-{project} → pgbouncer:6432
 ```
@@ -439,7 +446,7 @@ docker compose version
 grep -E "POSTGRES_SUPERUSER_PASSWORD|INTERNAL_API_KEY|LAUNCHDB_MASTER_KEY" .env
 
 # Verify scripts are executable
-chmod +x scripts/*.sh
+chmod +x infrastructure/scripts/*.sh
 ```
 
 ### Step 2: Build Images
@@ -482,14 +489,14 @@ docker compose logs -f
 docker compose ps
 
 # Expected output:
-# NAME                    STATUS
-# launchdb-postgres       Up (healthy)
-# launchdb-pgbouncer      Up (healthy)
-# launchdb-platform-api   Up (healthy)
-# launchdb-migrations     Up (healthy)
-# launchdb-auth           Up (healthy)
-# launchdb-storage        Up (healthy)
-# launchdb-postgrest-manager  Up (healthy)
+# NAME                            STATUS
+# launchdb-postgres               Up (healthy)
+# launchdb-pgbouncer              Up (healthy)
+# launchdb-platform-api           Up (healthy)
+# launchdb-migrations             Up (healthy)
+# launchdb-auth-service           Up (healthy)
+# launchdb-storage-service        Up (healthy)
+# launchdb-postgrest-manager      Up (healthy)
 # launchdb-caddy          Up (healthy)
 ```
 
