@@ -93,13 +93,15 @@ LaunchDB is a multi-tenant PostgreSQL-as-a-Service platform that provides isolat
 
 ### 3. Container Orchestration
 
-**Decision:** Manager API handles PostgREST container lifecycle via Docker socket.
+**Decision:** Manager API handles PostgREST container lifecycle via docker-socket-proxy + dockerode.
 
 **Rationale:**
 - **Separation of Concerns:** Platform API handles business logic; Manager API handles infrastructure
-- **Script Reuse:** Existing battle-tested shell scripts for PgBouncer/PostgREST management
+- **Security:** Socket-proxy filters Docker API (only CONTAINERS, POST, EXEC allowed)
 - **Security:** Internal-only API (not exposed to public internet)
+- **Security:** Manager runs as non-root user (nodeuser UID 1001)
 - **Atomicity:** Container spawn + PgBouncer registration + config generation in single operation
+- **Type Safety:** dockerode library replaces shell scripts (13 calls eliminated)
 
 ## Component Architecture
 
@@ -341,23 +343,32 @@ Removes PostgREST container and cleans up resources.
 
 **Note:** Cleanup runs even if container doesn't exist (idempotent)
 
-### Script Management
+### Docker Operations (v0.2.0+)
 
-Manager API executes shell scripts mounted as read-only volumes:
+Manager API uses `dockerode` library via `docker-socket-proxy`:
 
 ```yaml
-volumes:
-  - ./infrastructure/scripts:/scripts:ro
+# docker-compose.yml
+docker-socket-proxy:
+  image: lscr.io/linuxserver/socket-proxy:latest
+  environment:
+    CONTAINERS: 1  # Container lifecycle
+    POST: 1        # Write operations
+    EXEC: 1        # PgBouncer config updates
+    NETWORKS: 1    # Network discovery
+    IMAGES: 1      # Image pulls
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock:ro
 ```
 
-**Scripts:**
-- `pgbouncer-add-project.sh` - Register database in PgBouncer
-- `pgbouncer-add-user.sh` - Register user in PgBouncer
-- `pgbouncer-remove-project.sh` - Unregister database
-- `pgbouncer-remove-user.sh` - Unregister user
-- `postgrest-spawn.sh` - Spawn PostgREST container
+**Operations (lib/docker.js):**
+- `createPostgrestContainer()` - Spawn PostgREST container
+- `stopContainer()` / `removeContainer()` - Container cleanup
+- `sendSignal()` - SIGHUP for config reload
+- `execInContainer()` - PgBouncer config updates (flock + awk/sed)
+- `listPostgrestContainers()` - List all project containers
 
-**Concurrency:** All scripts use `flock` for safe concurrent execution
+**Security:** All Docker operations filtered through socket-proxy (no direct socket access)
 
 ## Data Flow
 
