@@ -276,8 +276,7 @@ mkdir -p backup/ssh
 git clone https://github.com/yourusername/launchdb.git /opt/launchdb
 
 # Or download release tarball
-wget https://github.com/yourusername/launchdb/archive/refs/tags/v0.1.9.tar.gz
-tar -xzf v0.1.9.tar.gz -C /opt/launchdb --strip-components=1
+git clone https://github.com/yourusername/launchdb.git /opt/launchdb
 
 # Verify structure
 ls -la /opt/launchdb
@@ -466,7 +465,7 @@ http://{$DOMAIN} {
 
   # Default Route (placeholder - no dashboard in v0.1.x)
   handle /* {
-    respond "LaunchDB v0.1.10 - API running. Dashboard coming in v0.2.0."
+    respond "LaunchDB - API running."
   }
 }
 ```
@@ -515,10 +514,10 @@ docker compose build backup
 
 # Verify images built
 docker images | grep launchdb
-# abushadaf/launchdb-pgbouncer          v0.1.9
-# abushadaf/launchdb-postgrest-manager  v0.1.9
-# abushadaf/launchdb-postgrest          v0.1.9
-# abushadaf/launchdb-backup             v0.1.9
+# abushadaf/launchdb-pgbouncer          latest
+# abushadaf/launchdb-postgrest-manager  latest
+# abushadaf/launchdb-postgrest          latest
+# abushadaf/launchdb-backup             latest
 ```
 
 ### Step 2: Start Core Infrastructure
@@ -953,11 +952,10 @@ cd /opt/launchdb
 
 # Pull latest changes
 git fetch origin
-git checkout v0.1.9  # Or latest version tag
+git checkout main  # Or specific version tag
 
 # Or download new release
-wget https://github.com/yourusername/launchdb/archive/refs/tags/v0.1.9.tar.gz
-tar -xzf v0.1.9.tar.gz -C /opt/launchdb --strip-components=1
+git clone https://github.com/yourusername/launchdb.git /opt/launchdb
 
 # Rebuild images
 docker compose build
