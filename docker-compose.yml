@@ -245,8 +245,8 @@ services:
     environment:
       PORT: 9000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      # Database access for fetching project config/secrets
-      PLATFORM_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@pgbouncer:6432/platform
+      # Database access for fetching project config/secrets (read-only role)
+      PLATFORM_DB_DSN: postgres://postgrest_manager_ro:${POSTGREST_MANAGER_PASSWORD}@pgbouncer:6432/platform
       LAUNCHDB_MASTER_KEY: ${LAUNCHDB_MASTER_KEY}
       # Host paths for Docker daemon (absolute paths required)
       # IMPORTANT: These MUST be set in .env file - no defaults for portability

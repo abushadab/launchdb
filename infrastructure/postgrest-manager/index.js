@@ -3,6 +3,7 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const crypto = require('crypto');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const { getProject, getSecret, closePool } = require('./lib/db');
 const { decrypt, validateMasterKey } = require('./lib/crypto');
 const { buildConfig } = require('./lib/config-builder');
@@ -90,7 +91,7 @@ app.get('/health', (req, res) => {
 
 // Spawn PostgREST container for a project
 app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (req, res) => {
-  const { projectId, authenticatorPassword } = req.body;
+  const { projectId } = req.body;
 
   try {
     // 1. Fetch project from platform DB
@@ -237,29 +238,7 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
       });
     }
 
-    // 8. Add authenticator user to PgBouncer
-    if (authenticatorPassword) {
-      const authenticatorUser = `${projectId}_authenticator`;
-      console.log(`Adding ${authenticatorUser} to PgBouncer userlist...`);
-      try {
-        const { stdout: userOut, stderr: userErr } = await execAsync(
-          `/scripts/pgbouncer-add-user.sh "${authenticatorUser}"`,
-          { cwd: '/app', env: { ...process.env, PGBOUNCER_USER_PASSWORD: authenticatorPassword } }
-        );
-        console.log(`PgBouncer user add: ${userOut}`);
-        if (userErr) console.error(`PgBouncer user stderr: ${userErr}`);
-      } catch (userError) {
-        console.error(`PgBouncer user add failed for ${authenticatorUser}:`, userError);
-        return res.status(500).json({
-          error: 'pgbouncer_user_add_failed',
-          message: `Failed to add authenticator to PgBouncer userlist: ${userError.message}`
-        });
-      }
-    } else {
-      console.warn(`No authenticatorPassword provided for ${projectId} - PgBouncer auth may fail`);
-    }
-
-    // 9. Spawn container
+    // 8. Spawn container
     const { stdout, stderr } = await execAsync(
       `/scripts/postgrest-spawn.sh ${projectId}`,
       { cwd: '/app' }
@@ -451,10 +430,12 @@ try {
 }
 
 // Ensure config directory exists
-fs.mkdir(CONFIG_DIR, { recursive: true }).catch(err => {
+try {
+  fsSync.mkdirSync(CONFIG_DIR, { recursive: true });
+} catch (err) {
   console.error(`ERROR: Cannot create config directory ${CONFIG_DIR}: ${err.message}`);
   process.exit(1);
-});
+}
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
