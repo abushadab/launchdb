@@ -86,7 +86,8 @@ jobs:
 
           # Auth & Security
           PLATFORM_JWT_SECRET=test-jwt-secret-for-ci-only-min-32-chars
-          LAUNCHDB_MASTER_KEY=dGVzdC1tYXN0ZXIta2V5LWZvci1jaS1vbmx5LTMyYnl0ZXM=
+          # This key is the base64 encoding of 'test-master-key-for-ci-only-32by' (exactly 32 bytes)
+          LAUNCHDB_MASTER_KEY=dGVzdC1tYXN0ZXIta2V5LWZvci1jaS1vbmx5LTMyYnk=
           INTERNAL_API_KEY=test-internal-key-for-ci
 
           # PostgREST Manager
