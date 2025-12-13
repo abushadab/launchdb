@@ -1,40 +1,89 @@
 # Auth RLS Integration Tests
-# Tests existing RLS policies from migrations (no DDL needed)
-# Uses valid UUID format for user IDs
+# Tests existing RLS policies from migrations with seeded test data
+#
+# Test UUIDs (seeded by rls-test-runner.ts):
+#   USER1: 00000000-0000-0000-0000-000000000001
+#   USER2: 00000000-0000-0000-0000-000000000002
+#
+# Seeded data:
+#   - user1@example.com (id: USER1)
+#   - user2@example.com (id: USER2)
 
 tests:
-  - description: "Authenticated user RLS isolation"
-    # Tests existing users_select_own policy
-    # Uses fake UUIDs - RLS should filter them out regardless of whether they exist
+  - description: "User1 can SELECT own user record"
     asserts:
       - action: SELECT
-        as: { role: authenticated, sub: "11111111-1111-1111-1111-111111111111" }
+        as: { role: authenticated, sub: "00000000-0000-0000-0000-000000000001" }
         from: auth.users
-        where: "id = '22222222-2222-2222-2222-222222222222'"
-        expect: empty
-        comment: "RLS prevents seeing other users' records"
+        where: "id = '00000000-0000-0000-0000-000000000001'"
+        expect: rows
+        rows_count: 1
+        comment: "User1 can see their own record"
 
+  - description: "User1 CANNOT see User2's record"
+    asserts:
+      - action: SELECT
+        as: { role: authenticated, sub: "00000000-0000-0000-0000-000000000001" }
+        from: auth.users
+        where: "id = '00000000-0000-0000-0000-000000000002'"
+        expect: empty
+        comment: "RLS filters out User2's record from User1"
+
+  - description: "User1 sees only own record when querying all users"
+    asserts:
+      - action: SELECT
+        as: { role: authenticated, sub: "00000000-0000-0000-0000-000000000001" }
+        from: auth.users
+        expect: rows
+        rows_count: 1
+        comment: "User1 only sees 1 row (themselves) when querying auth.users"
+
+  - description: "User2 can SELECT own user record"
+    asserts:
+      - action: SELECT
+        as: { role: authenticated, sub: "00000000-0000-0000-0000-000000000002" }
+        from: auth.users
+        where: "id = '00000000-0000-0000-0000-000000000002'"
+        expect: rows
+        rows_count: 1
+        comment: "User2 can see their own record"
+
+  - description: "User1 CANNOT update User2's record"
+    asserts:
       - action: UPDATE
-        as: { role: authenticated, sub: "11111111-1111-1111-1111-111111111111" }
+        as: { role: authenticated, sub: "00000000-0000-0000-0000-000000000001" }
         table: auth.users
         set: { email_verified: true }
-        where: "id = '22222222-2222-2222-2222-222222222222'"
+        where: "id = '00000000-0000-0000-0000-000000000002'"
         expect: success
         rows_affected: 0
-        comment: "RLS prevents updating other users' records"
+        comment: "RLS prevents User1 updating User2 (0 rows affected)"
 
   - description: "Sessions RLS isolation"
-    # Tests existing sessions_select_own policy
     asserts:
       - action: SELECT
-        as: { role: authenticated, sub: "11111111-1111-1111-1111-111111111111" }
+        as: { role: authenticated, sub: "00000000-0000-0000-0000-000000000001" }
         from: auth.sessions
-        where: "user_id = '22222222-2222-2222-2222-222222222222'"
+        where: "user_id = '00000000-0000-0000-0000-000000000002'"
         expect: empty
-        comment: "RLS filters out other users' sessions"
+        comment: "User1 cannot see User2's sessions"
 
-  - description: "Anon role cannot access auth tables"
-    # Tests that anon role is blocked by existing policies
+      - action: SELECT
+        as: { role: authenticated, sub: "00000000-0000-0000-0000-000000000001" }
+        from: auth.sessions
+        expect: empty
+        comment: "User1 sees no sessions (none seeded for test users)"
+
+  - description: "Refresh tokens RLS isolation"
+    asserts:
+      - action: SELECT
+        as: { role: authenticated, sub: "00000000-0000-0000-0000-000000000001" }
+        from: auth.refresh_tokens
+        where: "user_id = '00000000-0000-0000-0000-000000000002'"
+        expect: empty
+        comment: "User1 cannot see User2's refresh tokens"
+
+  - description: "Anon role auth table restrictions"
     asserts:
       - action: SELECT
         as: { role: anon }
@@ -52,4 +101,4 @@ tests:
         as: { role: anon }
         from: auth.refresh_tokens
         expect: empty
-        comment: "Anon cannot see any tokens"
+        comment: "Anon cannot see any refresh tokens"

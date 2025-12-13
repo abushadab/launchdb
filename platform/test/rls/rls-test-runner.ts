@@ -13,16 +13,17 @@ import { Pool, PoolClient } from 'pg';
 import { withJwtClaimsTx, JwtClaims } from '@launchdb/common/database';
 
 // ============================================================
-// Types
+// Test Data UUIDs (shared between seed and tests)
 // ============================================================
 
-interface PolicyDef {
-  name: string;
-  table: string;
-  role: string;
-  permission: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
-  policy: string;
-}
+export const TEST_UUIDS = {
+  USER1: '00000000-0000-0000-0000-000000000001',
+  USER2: '00000000-0000-0000-0000-000000000002',
+};
+
+// ============================================================
+// Types
+// ============================================================
 
 interface AssertSpec {
   action: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
@@ -42,49 +43,93 @@ interface AssertSpec {
 
 interface TestCase {
   description: string;
-  setup?: Array<{ policy: string }>; // Optional - if empty, tests existing policies
   asserts: AssertSpec[];
 }
 
 interface RlsTestSpec {
-  policies: PolicyDef[];
   tests: TestCase[];
 }
 
 // ============================================================
-// Policy Management
+// Seed Data Management
 // ============================================================
 
-async function createPolicy(pool: Pool, policy: PolicyDef): Promise<void> {
-  const client = await pool.connect();
-  try {
-    const policyClause = policy.policy.startsWith('USING')
-      ? policy.policy
-      : policy.policy.startsWith('WITH CHECK')
-      ? policy.policy
-      : `USING ${policy.policy}`;
+/**
+ * Seeds test data into the database.
+ * Uses service_role (null claims) to bypass RLS.
+ */
+export async function seedTestData(pool: Pool): Promise<void> {
+  // Use null claims to get service_role access (bypasses RLS)
+  await withJwtClaimsTx(pool, null, async (client: PoolClient) => {
+    // Seed auth.users
+    await client.query(`
+      INSERT INTO auth.users (id, email, password_hash)
+      VALUES
+        ('${TEST_UUIDS.USER1}', 'user1@example.com', 'test-hash-not-real'),
+        ('${TEST_UUIDS.USER2}', 'user2@example.com', 'test-hash-not-real')
+      ON CONFLICT (id) DO NOTHING
+    `);
 
-    const sql = `
-      CREATE POLICY "${policy.name}"
-      ON ${policy.table}
-      FOR ${policy.permission}
-      TO ${policy.role}
-      ${policyClause}
-    `;
+    // Seed storage.buckets
+    await client.query(`
+      INSERT INTO storage.buckets (name, public, owner_id)
+      VALUES
+        ('public-bucket',  true,  '${TEST_UUIDS.USER1}'),
+        ('private-bucket', false, '${TEST_UUIDS.USER1}')
+      ON CONFLICT (name) DO NOTHING
+    `);
 
-    await client.query(sql);
-  } finally {
-    client.release();
-  }
+    // Seed storage.objects
+    await client.query(`
+      INSERT INTO storage.objects (bucket, path, owner_id, size, content_type)
+      VALUES
+        ('public-bucket',  'pub/user1.txt',  '${TEST_UUIDS.USER1}', 123, 'text/plain'),
+        ('private-bucket', 'priv/user1.txt', '${TEST_UUIDS.USER1}', 456, 'text/plain'),
+        ('private-bucket', 'priv/user2.txt', '${TEST_UUIDS.USER2}', 789, 'text/plain')
+      ON CONFLICT (bucket, path) DO NOTHING
+    `);
+  });
 }
 
-async function dropPolicy(pool: Pool, policyName: string, tableName: string): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query(`DROP POLICY IF EXISTS "${policyName}" ON ${tableName}`);
-  } finally {
-    client.release();
+/**
+ * Cleans up test data from the database.
+ * Uses service_role (null claims) to bypass RLS.
+ * Can be skipped with KEEP_RLS_DB=1 env var for debugging.
+ */
+export async function cleanupTestData(pool: Pool): Promise<void> {
+  if (process.env.KEEP_RLS_DB === '1') {
+    console.log('KEEP_RLS_DB=1: Skipping test data cleanup');
+    return;
   }
+
+  // Use null claims to get service_role access (bypasses RLS)
+  await withJwtClaimsTx(pool, null, async (client: PoolClient) => {
+    // Delete in correct order (foreign key constraints)
+    await client.query(`
+      DELETE FROM storage.objects
+      WHERE owner_id IN ('${TEST_UUIDS.USER1}', '${TEST_UUIDS.USER2}')
+    `);
+
+    await client.query(`
+      DELETE FROM storage.buckets
+      WHERE owner_id IN ('${TEST_UUIDS.USER1}', '${TEST_UUIDS.USER2}')
+    `);
+
+    await client.query(`
+      DELETE FROM auth.refresh_tokens
+      WHERE user_id IN ('${TEST_UUIDS.USER1}', '${TEST_UUIDS.USER2}')
+    `);
+
+    await client.query(`
+      DELETE FROM auth.sessions
+      WHERE user_id IN ('${TEST_UUIDS.USER1}', '${TEST_UUIDS.USER2}')
+    `);
+
+    await client.query(`
+      DELETE FROM auth.users
+      WHERE id IN ('${TEST_UUIDS.USER1}', '${TEST_UUIDS.USER2}')
+    `);
+  });
 }
 
 // ============================================================
@@ -164,36 +209,6 @@ export async function runRlsTests(specPath: string, pool: Pool): Promise<void> {
 
   for (const test of spec.tests) {
     describe(test.description, () => {
-      // If setup is provided, create/drop policies (requires superuser)
-      // If setup is empty/undefined, test existing policies from migrations
-      const hasSetup = test.setup && test.setup.length > 0;
-
-      let policies: PolicyDef[] = [];
-      if (hasSetup) {
-        const policyNames = test.setup!.map((s) => s.policy);
-        policies = policyNames.map((name) => {
-          const policy = spec.policies?.find((p) => p.name === name);
-          if (!policy) {
-            throw new Error(`Policy "${name}" not found in spec`);
-          }
-          return policy;
-        });
-
-        beforeAll(async () => {
-          // Create policies for this test
-          for (const policy of policies) {
-            await createPolicy(pool, policy);
-          }
-        });
-
-        afterAll(async () => {
-          // Drop policies
-          for (const policy of policies) {
-            await dropPolicy(pool, policy.name, policy.table);
-          }
-        });
-      }
-
       for (const assert of test.asserts) {
         const testName = assert.comment || `${assert.action} as ${(assert.as as any).role || 'authenticated'}`;
 
@@ -253,22 +268,4 @@ export function loadTestSuites(directory: string, pool: Pool): void {
       runRlsTests(filePath, pool);
     });
   }
-}
-
-// ============================================================
-// Example Usage
-// ============================================================
-
-if (require.main === module) {
-  // Run tests if executed directly
-  const { Pool } = require('pg');
-  const pool = new Pool({
-    connectionString: process.env.TEST_DB_DSN || 'postgresql://postgres:postgres@localhost:5432/test_db',
-  });
-
-  loadTestSuites(__dirname, pool);
-
-  afterAll(async () => {
-    await pool.end();
-  });
 }
