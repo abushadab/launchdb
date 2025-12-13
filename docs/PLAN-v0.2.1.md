@@ -1,112 +1,44 @@
 # v0.2.1 Implementation Plan - Code Quality
 
 **Created:** 14 December 2025
-**Target:** Code quality improvements, RLS fixes, centralized error handling
+**Updated:** 14 December 2025 (post-Codex review)
+**Target:** RLS integration tests (code quality items already implemented)
 
 ---
 
 ## Overview
 
-Based on analysis of Supabase Storage patterns (`/docs/supabase-storage-deep-analysis.md`) and LaunchGuard findings.
+Based on Codex's architecture review, most planned items are **already implemented**. Only RLS integration tests remain.
 
-| Task | Priority | Effort | Description |
-|------|----------|--------|-------------|
-| SET LOCAL → set_config() | P1 | Medium | Fix transaction context bugs |
-| Centralized Error Handling | P2 | Medium | ERRORS factory pattern |
-| RLS Integration Tests | P3 | High | YAML-driven test framework |
-| ESLint no-floating-promises | ✅ Done | - | Already configured |
+| Task | Priority | Status | Location |
+|------|----------|--------|----------|
+| SET LOCAL → set_config() | P1 | **DONE** | `libs/common/database/src/with-jwt-claims-tx.ts` |
+| Centralized Error Handling | P2 | **DONE** | `libs/common/errors/src/` |
+| RLS Integration Tests | P3 | **TODO** | To be created in `testing/rls/` |
+| ESLint no-floating-promises | P4 | **DONE** | `.eslintrc.js` |
 
 ---
 
-## P1: Fix SET LOCAL Transaction Bugs
+## P1: SET LOCAL → set_config() - ALREADY IMPLEMENTED
 
-### Problem
+**File:** `libs/common/database/src/with-jwt-claims-tx.ts`
 
-`SET LOCAL` only works inside explicit transactions. If used outside a transaction block, changes are **lost immediately**.
-
-```typescript
-// BUG - SET LOCAL outside transaction (current code)
-await client.query(`SET LOCAL request.jwt.claims = '${claims}'`);
-await client.query('SELECT * FROM data');  // Claims already gone!
-```
-
-### Solution: Use `set_config()` with `true` flag
+The `withJwtClaimsTx()` function already uses the correct `set_config()` pattern:
 
 ```typescript
-// CORRECT - set_config with is_local=true
-await client.query('BEGIN');
-await client.query(
-  `SELECT set_config('request.jwt.claims', $1, true)`,
-  [JSON.stringify(claims)]
-);
-await client.query('SELECT * FROM data');  // Claims available
-await client.query('COMMIT');
-```
-
-### Implementation
-
-**Create:** `libs/common/database/src/rls-context.ts`
-
-```typescript
-import { Pool, PoolClient } from 'pg';
-
-export interface RlsContext {
-  role: string;
-  sub?: string;
-  claims?: Record<string, unknown>;
-}
-
-/**
- * Execute function within RLS context using set_config pattern.
- * Ensures JWT claims are available for PostgreSQL RLS policies.
- */
-export async function withRlsContext<T>(
+export async function withJwtClaimsTx<T>(
   pool: Pool,
-  context: RlsContext,
+  claims: JwtClaims | null,
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   const client = await pool.connect();
-
   try {
     await client.query('BEGIN');
-
-    // Set RLS context using set_config (is_local = true)
+    const claimsJson = claims ? JSON.stringify(claims) : '{"role":"service_role"}';
     await client.query(
-      `SELECT
-        set_config('role', $1, true),
-        set_config('request.jwt.claim.role', $1, true),
-        set_config('request.jwt.claim.sub', $2, true),
-        set_config('request.jwt.claims', $3, true)`,
-      [
-        context.role,
-        context.sub || '',
-        JSON.stringify(context.claims || {}),
-      ]
+      `SELECT set_config('request.jwt.claims', $1, true)`,  // <-- Correct pattern!
+      [claimsJson]
     );
-
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-/**
- * Execute as superuser, bypassing RLS policies.
- */
-export async function asSuperUser<T>(
-  pool: Pool,
-  fn: (client: PoolClient) => Promise<T>
-): Promise<T> {
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-    await client.query(`SET LOCAL role = 'postgres'`);  // OK here - inside transaction
     const result = await fn(client);
     await client.query('COMMIT');
     return result;
@@ -119,262 +51,46 @@ export async function asSuperUser<T>(
 }
 ```
 
-### Files to Update
-
-| File | Change |
-|------|--------|
-| `libs/common/database/src/rls-context.ts` | NEW - RLS context utilities |
-| `libs/common/database/src/index.ts` | Export new utilities |
-| `apps/storage-service/src/storage/storage.service.ts` | Use `withRlsContext()` |
-| `apps/auth-service/src/auth/auth.service.ts` | Use `asSuperUser()` for session creation |
-
-### Testing
-
-```typescript
-// Test that RLS context is properly set
-it('should set JWT claims within transaction', async () => {
-  const claims = { sub: 'user-123', role: 'authenticated' };
-
-  await withRlsContext(pool, claims, async (client) => {
-    const result = await client.query(
-      `SELECT current_setting('request.jwt.claims', true) as claims`
-    );
-    expect(JSON.parse(result.rows[0].claims)).toEqual(claims);
-  });
-});
-```
+**Status:** No action needed.
 
 ---
 
-## P2: Centralized Error Handling
+## P2: Centralized Error Handling - ALREADY IMPLEMENTED
 
-### Problem
+**Directory:** `libs/common/errors/src/`
 
-- Ad-hoc error handling throughout codebase
-- Inconsistent HTTP status codes
-- PostgreSQL errors not properly mapped
-- No standard error response format
+### Files:
+- `errors-factory.ts` - ERRORS factory with 18+ error types
+- `launchdb-error.ts` - LaunchDBError base class
+- `launchdb-error.filter.ts` - NestJS exception filter
 
-### Solution: ERRORS Factory Pattern
-
-**Create:** `libs/common/errors/src/`
-
+### Existing Error Types:
 ```typescript
-// error-codes.ts
-export enum ErrorCode {
-  // Authentication
-  InvalidCredentials = 'InvalidCredentials',
-  InvalidToken = 'InvalidToken',
-  TokenExpired = 'TokenExpired',
-
-  // Authorization
-  AccessDenied = 'AccessDenied',
-  InsufficientPermissions = 'InsufficientPermissions',
-
-  // Resources
-  NotFound = 'NotFound',
-  AlreadyExists = 'AlreadyExists',
-  Conflict = 'Conflict',
-
-  // Database
-  DatabaseError = 'DatabaseError',
-  DatabaseTimeout = 'DatabaseTimeout',
-  RlsViolation = 'RlsViolation',
-  UniqueViolation = 'UniqueViolation',
-  ForeignKeyViolation = 'ForeignKeyViolation',
-
-  // Validation
-  ValidationError = 'ValidationError',
-  InvalidInput = 'InvalidInput',
-
-  // System
-  InternalError = 'InternalError',
-  ServiceUnavailable = 'ServiceUnavailable',
-}
-
-// launchdb-error.ts
-export class LaunchDBError extends Error {
-  constructor(
-    public readonly code: ErrorCode,
-    public readonly httpStatus: number,
-    message: string,
-    public readonly originalError?: Error,
-    public readonly metadata?: Record<string, unknown>,
-  ) {
-    super(message);
-    this.name = 'LaunchDBError';
-  }
-
-  render() {
-    return {
-      error: this.code,
-      message: this.message,
-      statusCode: this.httpStatus,
-    };
-  }
-
-  withMetadata(metadata: Record<string, unknown>) {
-    return new LaunchDBError(
-      this.code,
-      this.httpStatus,
-      this.message,
-      this.originalError,
-      { ...this.metadata, ...metadata },
-    );
-  }
-}
-
-// errors.ts - Factory functions
 export const ERRORS = {
-  // Authentication
-  InvalidCredentials: (message = 'Invalid email or password') =>
-    new LaunchDBError(ErrorCode.InvalidCredentials, 401, message),
-
-  InvalidToken: (message = 'Invalid or expired token') =>
-    new LaunchDBError(ErrorCode.InvalidToken, 401, message),
-
-  // Authorization
-  AccessDenied: (resource?: string, e?: Error) =>
-    new LaunchDBError(
-      ErrorCode.AccessDenied,
-      403,
-      resource ? `Access denied to ${resource}` : 'Access denied',
-      e,
-    ),
-
-  // Resources
-  NotFound: (resource: string, id?: string) =>
-    new LaunchDBError(
-      ErrorCode.NotFound,
-      404,
-      id ? `${resource} '${id}' not found` : `${resource} not found`,
-    ),
-
-  AlreadyExists: (resource: string, id?: string) =>
-    new LaunchDBError(
-      ErrorCode.AlreadyExists,
-      409,
-      id ? `${resource} '${id}' already exists` : `${resource} already exists`,
-    ),
-
-  // Database
-  DatabaseError: (message: string, e?: Error) =>
-    new LaunchDBError(ErrorCode.DatabaseError, 500, message, e),
-
-  RlsViolation: (e?: Error) =>
-    new LaunchDBError(
-      ErrorCode.RlsViolation,
-      403,
-      'Row-level security policy violation',
-      e,
-    ),
-
-  // Validation
-  ValidationError: (message: string, field?: string) =>
-    new LaunchDBError(
-      ErrorCode.ValidationError,
-      400,
-      message,
-      undefined,
-      field ? { field } : undefined,
-    ),
-
-  // System
-  InternalError: (e?: Error) =>
-    new LaunchDBError(
-      ErrorCode.InternalError,
-      500,
-      'An internal error occurred',
-      e,
-    ),
+  InvalidCredentials: () => ...,
+  InvalidRefreshToken: () => ...,
+  RefreshTokenExpired: () => ...,
+  UserNotFound: () => ...,
+  UserAlreadyExists: () => ...,
+  ProjectNotFound: () => ...,
+  BucketNotFound: () => ...,
+  ObjectNotFound: () => ...,
+  RlsViolation: () => ...,
+  ValidationError: () => ...,
+  Unauthorized: () => ...,
+  Forbidden: () => ...,
+  InternalError: () => ...,
+  // ... and more
 };
-
-// pg-error-mapper.ts - Map PostgreSQL errors
-export function mapPgError(pgError: { code?: string; message?: string }): LaunchDBError {
-  switch (pgError.code) {
-    case '42501':  // RLS violation
-      return ERRORS.RlsViolation(pgError as Error);
-
-    case '23505':  // Unique constraint
-      return ERRORS.AlreadyExists('Resource');
-
-    case '23503':  // Foreign key violation
-      return ERRORS.NotFound('Related resource');
-
-    case '57014':  // Query canceled (timeout)
-      return new LaunchDBError(
-        ErrorCode.DatabaseTimeout,
-        504,
-        'Database query timed out',
-        pgError as Error,
-      );
-
-    default:
-      return ERRORS.DatabaseError(pgError.message || 'Database error', pgError as Error);
-  }
-}
 ```
 
-### NestJS Exception Filter
-
-```typescript
-// libs/common/errors/src/launchdb-exception.filter.ts
-import { ExceptionFilter, Catch, ArgumentsHost, HttpException } from '@nestjs/common';
-import { LaunchDBError } from './launchdb-error';
-
-@Catch()
-export class LaunchDBExceptionFilter implements ExceptionFilter {
-  catch(exception: unknown, host: ArgumentsHost) {
-    const ctx = host.switchToHttp();
-    const response = ctx.getResponse();
-
-    if (exception instanceof LaunchDBError) {
-      return response.status(exception.httpStatus).json(exception.render());
-    }
-
-    if (exception instanceof HttpException) {
-      return response.status(exception.getStatus()).json({
-        error: 'HttpException',
-        message: exception.message,
-        statusCode: exception.getStatus(),
-      });
-    }
-
-    // Unknown error
-    console.error('Unhandled exception:', exception);
-    return response.status(500).json({
-      error: 'InternalError',
-      message: 'An internal error occurred',
-      statusCode: 500,
-    });
-  }
-}
-```
-
-### Usage Example
-
-```typescript
-// Before (inconsistent)
-if (!user) {
-  throw new NotFoundException('User not found');
-}
-
-// After (standardized)
-if (!user) {
-  throw ERRORS.NotFound('User', userId);
-}
-
-// PostgreSQL error handling
-try {
-  await client.query('INSERT INTO ...');
-} catch (e) {
-  throw mapPgError(e);  // Automatically maps to correct error
-}
-```
+**Status:** No action needed.
 
 ---
 
-## P3: RLS Integration Tests
+## P3: RLS Integration Tests - TODO
+
+This is the **only remaining item** for v0.2.1.
 
 ### Problem
 
@@ -442,7 +158,7 @@ tests:
 // testing/rls/rls-test-runner.ts
 import * as yaml from 'js-yaml';
 import { Pool } from 'pg';
-import { withRlsContext } from '@launchdb/common/database';
+import { withJwtClaimsTx } from '@launchdb/common/database';
 
 interface RlsTestSpec {
   policies: PolicyDef[];
@@ -471,7 +187,7 @@ export async function runRlsTests(specPath: string, pool: Pool) {
 
       for (const assert of test.asserts) {
         it(`${assert.action} as ${assert.as.role}`, async () => {
-          const result = await withRlsContext(pool, assert.as, async (client) => {
+          const result = await withJwtClaimsTx(pool, assert.as, async (client) => {
             return executeAssert(client, assert);
           });
 
@@ -492,11 +208,19 @@ export async function runRlsTests(specPath: string, pool: Pool) {
 }
 ```
 
+### Implementation Steps
+
+1. Create `testing/rls/` directory
+2. Implement YAML test spec parser
+3. Create test runner using existing `withJwtClaimsTx()`
+4. Write initial test specs for storage and auth
+5. Add to CI pipeline
+
 ---
 
-## P4: ESLint no-floating-promises
+## P4: ESLint no-floating-promises - ALREADY CONFIGURED
 
-**Status:** ✅ Already configured in `.eslintrc.js`
+**File:** `.eslintrc.js`
 
 ```javascript
 rules: {
@@ -506,57 +230,28 @@ rules: {
 
 Current lint shows 1 error (unused variable), 16 warnings (any types) - no floating promises.
 
----
-
-## Implementation Order
-
-### Phase 1: RLS Context (3-4 hours)
-1. Create `libs/common/database/src/rls-context.ts`
-2. Add tests for `withRlsContext()` and `asSuperUser()`
-3. Update storage-service to use new pattern
-4. Update auth-service session creation
-
-### Phase 2: Error Handling (4-5 hours)
-1. Create `libs/common/errors/` module
-2. Implement `LaunchDBError`, `ERRORS`, `mapPgError()`
-3. Create `LaunchDBExceptionFilter`
-4. Migrate services to use new error patterns
-5. Update error responses across all endpoints
-
-### Phase 3: RLS Tests (5-6 hours)
-1. Create `testing/rls/` directory
-2. Implement YAML test spec parser
-3. Create test runner with policy creation/cleanup
-4. Write initial test specs for storage and auth
-5. Add to CI pipeline
-
-### Phase 4: Cleanup (1-2 hours)
-1. Fix remaining `any` type warnings
-2. Fix unused variable error
-3. Run full lint check
-4. Update documentation
+**Status:** No action needed.
 
 ---
 
-## Success Criteria
+## Success Criteria for v0.2.1
 
-- [ ] `withRlsContext()` utility created and tested
-- [ ] All storage/auth DB operations use new RLS pattern
-- [ ] `ERRORS` factory with 15+ error types
-- [ ] `LaunchDBExceptionFilter` applied to all apps
-- [ ] PostgreSQL errors mapped to application errors
-- [ ] RLS test framework with 10+ test cases
-- [ ] ESLint passes with 0 errors
-- [ ] All tests pass
+- [x] `withJwtClaimsTx()` utility using set_config pattern
+- [x] ERRORS factory with 18+ error types
+- [x] LaunchDBExceptionFilter for NestJS apps
+- [x] ESLint no-floating-promises configured
+- [ ] **RLS test framework with 10+ test cases**
+- [ ] **RLS tests added to CI pipeline**
 
 ---
 
 ## References
 
 - `/docs/supabase-storage-deep-analysis.md` - Patterns source
-- `/agents/launchguard/guidelines/code-quality.md` - Quality checklist
-- `/agents/launchguard/findings/` - Security findings
+- `libs/common/database/src/with-jwt-claims-tx.ts` - Existing RLS context
+- `libs/common/errors/src/` - Existing error handling
 
 ---
 
-*Plan created by Opus (Operations Lead)*
+*Plan updated after Codex architecture review*
+*Created by Opus (Operations Lead)*
