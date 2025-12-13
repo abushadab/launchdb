@@ -13,6 +13,7 @@ RUN npm install --production
 
 # Copy application code
 COPY index.js ./
+COPY lib/ ./lib/
 
 # Expose port
 EXPOSE 9000

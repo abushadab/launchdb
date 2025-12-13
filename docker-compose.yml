@@ -245,6 +245,9 @@ services:
     environment:
       PORT: 9000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      # Database access for fetching project config/secrets
+      PLATFORM_DB_DSN: postgres://${POSTGRES_SUPERUSER:-postgres}:${POSTGRES_SUPERUSER_PASSWORD}@pgbouncer:6432/platform
+      LAUNCHDB_MASTER_KEY: ${LAUNCHDB_MASTER_KEY}
       # Host paths for Docker daemon (absolute paths required)
       # IMPORTANT: These MUST be set in .env file - no defaults for portability
       # Point to absolute paths on Docker host where files are located
@@ -255,7 +258,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./infrastructure/scripts:/scripts:ro
-      - postgrest-projects:/etc/postgrest/projects:ro
+      - postgrest-projects:/etc/postgrest/projects
     depends_on:
       - postgres
       - pgbouncer

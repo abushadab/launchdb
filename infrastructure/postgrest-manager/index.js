@@ -2,14 +2,21 @@ const express = require('express');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const crypto = require('crypto');
+const fs = require('fs').promises;
+const { getProject, getSecret, closePool } = require('./lib/db');
+const { decrypt, validateMasterKey } = require('./lib/crypto');
+const { buildConfig } = require('./lib/config-builder');
 
 const execAsync = promisify(exec);
 const app = express();
 const PORT = process.env.PORT || 9000;
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
-// Strict validation regex for projectId to prevent command injection
-const PROJECT_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
+// Strict validation: proj_ prefix + exactly 16 lowercase hex chars
+const PROJECT_ID_REGEX = /^proj_[a-z0-9]{16}$/;
+
+// Config directory (mounted RW from postgrest-projects volume)
+const CONFIG_DIR = '/etc/postgrest/projects';
 
 app.use(express.json());
 
@@ -27,7 +34,7 @@ const validateProjectId = (req, res, next) => {
   if (!PROJECT_ID_REGEX.test(projectId)) {
     return res.status(400).json({
       error: 'bad_request',
-      message: 'Invalid projectId format. Only alphanumeric, underscore, and hyphen allowed.'
+      message: 'Invalid projectId format. Expected: proj_xxxxxxxxxxxxxxxx (16 hex chars)'
     });
   }
 
@@ -86,34 +93,134 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
   const { projectId, authenticatorPassword } = req.body;
 
   try {
-    // Check if container already exists
+    // 1. Fetch project from platform DB
+    const project = await getProject(projectId);
+    if (!project) {
+      return res.status(404).json({
+        error: 'project_not_found',
+        message: `Project ${projectId} not found`
+      });
+    }
+
+    if (project.status !== 'active') {
+      return res.status(400).json({
+        error: 'project_not_active',
+        message: `Project status is ${project.status}, expected active`
+      });
+    }
+
+    // 2. Fetch and decrypt secrets
+    const [jwtSecretEnc, dbPasswordEnc] = await Promise.all([
+      getSecret(projectId, 'jwt_secret'),
+      getSecret(projectId, 'db_password'),
+    ]);
+
+    if (!jwtSecretEnc) {
+      return res.status(500).json({
+        error: 'secret_not_found',
+        message: 'JWT secret not found for project'
+      });
+    }
+
+    if (!dbPasswordEnc) {
+      return res.status(500).json({
+        error: 'secret_not_found',
+        message: 'Database password not found for project'
+      });
+    }
+
+    let jwtSecret, dbPassword;
+    try {
+      jwtSecret = decrypt(jwtSecretEnc);
+      dbPassword = decrypt(dbPasswordEnc);
+    } catch (err) {
+      console.error(`Decryption failed for ${projectId}:`, err.message);
+      return res.status(500).json({
+        error: 'decryption_failed',
+        message: 'Failed to decrypt project secrets'
+      });
+    }
+
+    // 3. Build config content
+    const configContent = buildConfig({
+      projectId,
+      dbName: project.db_name,
+      dbPassword,
+      jwtSecret,
+      host: 'pgbouncer',
+      port: 6432,
+    });
+
+    // 4. Calculate config hash for idempotency
+    const configHash = crypto.createHash('sha256').update(configContent).digest('hex').slice(0, 16);
+    const configPath = `${CONFIG_DIR}/${projectId}.conf`;
+
+    // Check existing config hash
+    let existingHash = null;
+    let configExists = false;
+    try {
+      const existing = await fs.readFile(configPath, 'utf8');
+      existingHash = crypto.createHash('sha256').update(existing).digest('hex').slice(0, 16);
+      configExists = true;
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        console.error(`Error reading config for ${projectId}:`, err.message);
+      }
+    }
+
+    const configChanged = configHash !== existingHash;
+
+    // 5. Write config if changed
+    if (configChanged) {
+      await fs.writeFile(configPath, configContent, { mode: 0o600 });
+      console.log(`Config written: ${configPath} (hash: ${configHash})`);
+    }
+
+    // 6. Check container state
     const { stdout: existsCheck } = await execAsync(
       `docker ps -a --format '{{.Names}}' | grep -q '^postgrest-${projectId}$' && echo 'exists' || echo 'not_exists'`
     );
 
-    if (existsCheck.trim() === 'exists') {
-      // Check if it's running
+    const containerExists = existsCheck.trim() === 'exists';
+
+    if (containerExists) {
+      // Check if running
       const { stdout: runningCheck } = await execAsync(
         `docker ps --format '{{.Names}}' | grep -q '^postgrest-${projectId}$' && echo 'running' || echo 'stopped'`
       );
 
       if (runningCheck.trim() === 'running') {
-        return res.status(409).json({
-          error: 'container_exists',
-          message: 'Container already running'
-        });
+        if (!configChanged) {
+          // Container running, config unchanged - no-op
+          return res.status(200).json({
+            projectId,
+            containerId: `postgrest-${projectId}`,
+            containerName: `postgrest-${projectId}`,
+            port: 3000,
+            status: 'already_running',
+            configHash,
+          });
+        } else {
+          // Container running, config changed - reload via SIGHUP
+          console.log(`Config changed for running container ${projectId}, sending SIGHUP...`);
+          await execAsync(`docker kill --signal=SIGHUP postgrest-${projectId}`);
+          return res.status(200).json({
+            projectId,
+            containerId: `postgrest-${projectId}`,
+            containerName: `postgrest-${projectId}`,
+            port: 3000,
+            status: 'reloaded',
+            configHash,
+          });
+        }
+      } else {
+        // Container stopped - remove and respawn for clean state
+        console.log(`Removing stopped container for ${projectId}...`);
+        await execAsync(`docker rm postgrest-${projectId}`);
       }
-
-      // Container exists but stopped - remove it to ensure clean state
-      // This ensures PgBouncer registration and fresh spawn happen
-      console.log(`Removing stopped container for ${projectId}...`);
-      await execAsync(`docker rm postgrest-${projectId}`);
-      console.log(`Container removed, will create fresh container with PgBouncer setup`);
-      // Fall through to PgBouncer registration and fresh container spawn
     }
 
-    // Add project database to PgBouncer first
-    // PostgREST needs PgBouncer entry to connect to the database
+    // 7. Add to PgBouncer (existing logic)
     console.log(`Adding ${projectId} database to PgBouncer...`);
     try {
       const { stdout: pgbouncerOut, stderr: pgbouncerErr } = await execAsync(
@@ -130,8 +237,7 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
       });
     }
 
-    // Add authenticator user to PgBouncer userlist if password provided
-    // This is required for PgBouncer to authenticate the PostgREST connection
+    // 8. Add authenticator user to PgBouncer
     if (authenticatorPassword) {
       const authenticatorUser = `${projectId}_authenticator`;
       console.log(`Adding ${authenticatorUser} to PgBouncer userlist...`);
@@ -153,7 +259,7 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
       console.warn(`No authenticatorPassword provided for ${projectId} - PgBouncer auth may fail`);
     }
 
-    // Spawn new container using spawn script
+    // 9. Spawn container
     const { stdout, stderr } = await execAsync(
       `/scripts/postgrest-spawn.sh ${projectId}`,
       { cwd: '/app' }
@@ -167,7 +273,8 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
       containerId: `postgrest-${projectId}`,
       containerName: `postgrest-${projectId}`,
       port: 3000,
-      status: 'running'
+      status: 'running',
+      configHash,
     });
   } catch (error) {
     console.error(`Spawn error for ${projectId}:`, error);
@@ -322,17 +429,45 @@ app.get('/internal/postgrest', authenticate, async (req, res) => {
 });
 
 // Validate required configuration before starting server
-if (!INTERNAL_API_KEY) {
-  console.error('ERROR: INTERNAL_API_KEY environment variable is required');
+const missingEnv = [];
+if (!INTERNAL_API_KEY) missingEnv.push('INTERNAL_API_KEY');
+if (!process.env.PLATFORM_DB_DSN) missingEnv.push('PLATFORM_DB_DSN');
+if (!process.env.LAUNCHDB_MASTER_KEY) missingEnv.push('LAUNCHDB_MASTER_KEY');
+
+if (missingEnv.length > 0) {
+  console.error('ERROR: Missing required environment variables:');
+  missingEnv.forEach(v => console.error(`  - ${v}`));
   console.error('');
-  console.error('PostgREST Manager cannot start without authentication.');
-  console.error('Set INTERNAL_API_KEY in docker-compose.yml or .env file:');
-  console.error('  INTERNAL_API_KEY=<your-secret-key>');
-  console.error('');
-  console.error('Generate a secure key with:');
-  console.error('  openssl rand -hex 32');
+  console.error('PostgREST Manager cannot start without these configuration values.');
   process.exit(1);
 }
+
+// Validate master key format at boot (fail fast)
+try {
+  validateMasterKey();
+} catch (err) {
+  console.error(`ERROR: Invalid LAUNCHDB_MASTER_KEY: ${err.message}`);
+  process.exit(1);
+}
+
+// Ensure config directory exists
+fs.mkdir(CONFIG_DIR, { recursive: true }).catch(err => {
+  console.error(`ERROR: Cannot create config directory ${CONFIG_DIR}: ${err.message}`);
+  process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, closing database pool...');
+  await closePool();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, closing database pool...');
+  await closePool();
+  process.exit(0);
+});
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
