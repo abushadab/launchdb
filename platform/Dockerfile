@@ -58,20 +58,14 @@ COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 # Copy SQL migration files from builder
 COPY --from=builder --chown=nodejs:nodejs /app/libs/sql ./libs/sql
 
-# Create PostgREST config directory with correct ownership
-# Platform-API needs to write project-specific PostgREST configs here
-RUN mkdir -p /etc/postgrest/projects && \
-    chown nodejs:nodejs /etc/postgrest/projects && \
-    chmod 0750 /etc/postgrest/projects
-
 # Install su-exec for dropping privileges in entrypoint
 RUN apk add --no-cache su-exec
 
 # Copy entrypoint script with execute permission
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 
-# Note: Container starts as root to fix volume permissions
-# Entrypoint drops to nodejs user before running the app
+# Note: Entrypoint drops to nodejs user for security
+# Container does not need root privileges for any operations
 
 # Set default PORT (will be overridden by docker-compose)
 ENV PORT=8000

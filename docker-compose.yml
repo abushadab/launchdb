@@ -113,7 +113,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - ./infrastructure/platform-api/config:/app/config:ro
-      - postgrest-projects:/etc/postgrest/projects
     depends_on:
       pgbouncer:
         condition: service_healthy
