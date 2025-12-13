@@ -84,9 +84,17 @@ export class PostgRestProxyController {
 
       // Forward specific headers
       onProxyReq: (proxyReq, req) => {
-        // Add tracing headers
+        // Add tracing headers FIRST (before any write)
         proxyReq.setHeader('X-Forwarded-For', req.ip || req.socket.remoteAddress || '');
         proxyReq.setHeader('X-Request-ID', requestId);
+
+        // Re-stream body if it was parsed by body-parser middleware
+        if (req.body && Object.keys(req.body).length > 0) {
+          const bodyData = JSON.stringify(req.body);
+          proxyReq.setHeader('Content-Type', 'application/json');
+          proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+          proxyReq.write(bodyData);
+        }
 
         this.logger.debug(
           `Proxying ${req.method} ${req.url} to postgrest-${projectId}:3000`,
