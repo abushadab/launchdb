@@ -42,7 +42,7 @@ interface AssertSpec {
 
 interface TestCase {
   description: string;
-  setup: Array<{ policy: string }>;
+  setup?: Array<{ policy: string }>; // Optional - if empty, tests existing policies
   asserts: AssertSpec[];
 }
 
@@ -164,28 +164,35 @@ export async function runRlsTests(specPath: string, pool: Pool): Promise<void> {
 
   for (const test of spec.tests) {
     describe(test.description, () => {
-      const policyNames = test.setup.map((s) => s.policy);
-      const policies = policyNames.map((name) => {
-        const policy = spec.policies.find((p) => p.name === name);
-        if (!policy) {
-          throw new Error(`Policy "${name}" not found in spec`);
-        }
-        return policy;
-      });
+      // If setup is provided, create/drop policies (requires superuser)
+      // If setup is empty/undefined, test existing policies from migrations
+      const hasSetup = test.setup && test.setup.length > 0;
 
-      beforeAll(async () => {
-        // Create policies for this test
-        for (const policy of policies) {
-          await createPolicy(pool, policy);
-        }
-      });
+      let policies: PolicyDef[] = [];
+      if (hasSetup) {
+        const policyNames = test.setup!.map((s) => s.policy);
+        policies = policyNames.map((name) => {
+          const policy = spec.policies?.find((p) => p.name === name);
+          if (!policy) {
+            throw new Error(`Policy "${name}" not found in spec`);
+          }
+          return policy;
+        });
 
-      afterAll(async () => {
-        // Drop policies
-        for (const policy of policies) {
-          await dropPolicy(pool, policy.name, policy.table);
-        }
-      });
+        beforeAll(async () => {
+          // Create policies for this test
+          for (const policy of policies) {
+            await createPolicy(pool, policy);
+          }
+        });
+
+        afterAll(async () => {
+          // Drop policies
+          for (const policy of policies) {
+            await dropPolicy(pool, policy.name, policy.table);
+          }
+        });
+      }
 
       for (const assert of test.asserts) {
         const testName = assert.comment || `${assert.action} as ${(assert.as as any).role || 'authenticated'}`;
