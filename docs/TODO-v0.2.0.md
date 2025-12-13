@@ -4,42 +4,33 @@ Quick fixes applied in v0.1.x that need proper solutions in v0.2.0.
 
 ---
 
-## 1. PostgREST Config File Architecture
+## 1. PostgREST Config File Architecture ✅ DONE
 
-**Current (Quick Fix):**
-- platform-api writes config files to bind mount
-- Spawn script mounts from host path
-- Permission issues with non-root container writing to root-owned host directory
+**Status:** ✅ **Completed - Option B implemented**
 
-**Problem:**
-- Named volumes don't work because spawn script runs on HOST
-- Bind mounts have permission issues (nodejs UID 1001 vs root)
-- Entrypoint chown is a workaround, not a solution
+**What was done (13 Dec 2025):**
+- PostgREST Manager now fetches secrets directly from platform DB
+- Manager decrypts secrets using LAUNCHDB_MASTER_KEY (AES-256-GCM)
+- Manager generates config files with exact parity to old platform-api output
+- Platform-API simplified to only send `projectId` in spawn request
+- Named volume `postgrest-projects` mounted RW in manager
+- Created `postgrest_manager_ro` least-privileged role (SELECT only)
+- Removed `authenticatorPassword` from wire (security improvement)
 
-**Long-Term Solution (Codex-approved):**
-1. Move config materialization to `postgrest-manager`
-   - platform-api sends config data via API call
-   - postgrest-manager validates and writes `.conf` file
-   - Separation of concerns: manager owns PostgREST lifecycle
+**Commits:**
+- `9afc8c1` - feat(manager): Implement Option B - manager owns config generation
+- `ae04f3d` - fix(manager): Address Codex security review concerns
+- `b0a67bc` - refactor(platform): Remove config generation - manager handles it
 
-2. Use named volume mounted by volume NAME in spawn script:
-   ```bash
-   # Instead of host path:
-   -v /opt/launchdb/infrastructure/postgrest/projects/xxx.conf:/etc/postgrest.conf:ro
-
-   # Use volume name directly:
-   -v launchdb-postgrest-projects:/etc/postgrest/projects:ro
-   ```
-
-3. Store canonical config in platform DB
-   - postgrest-manager reconciles volume on boot
-   - Volume is cache, DB is source of truth
-   - Enables recovery if volume lost
-
-**Files to modify:**
-- `platform/apps/platform-api/src/projects/project-creator.service.ts`
-- `infrastructure/postgrest-manager/index.js`
-- `infrastructure/scripts/postgrest-spawn.sh`
+**Files modified:**
+- `infrastructure/postgrest-manager/index.js` - New spawn flow with DB fetch/decrypt
+- `infrastructure/postgrest-manager/lib/db.js` - NEW: Database access
+- `infrastructure/postgrest-manager/lib/crypto.js` - NEW: AES-256-GCM decryption
+- `infrastructure/postgrest-manager/lib/config-builder.js` - NEW: Config generation
+- `infrastructure/postgres/init/04_postgrest_manager_role.sql` - NEW: Least-privileged role
+- `platform/apps/platform-api/src/postgrest/postgrest-manager.service.ts` - Simplified
+- `platform/apps/platform-api/src/projects/project-creator.service.ts` - Simplified
+- `docker-compose.yml` - Manager uses read-only DB role
 
 ---
 
@@ -80,21 +71,17 @@ Quick fixes applied in v0.1.x that need proper solutions in v0.2.0.
 
 ---
 
-## 4. Named Volume Definition
+## 4. Named Volume Definition ✅ DONE
 
-**Current (Quick Fix):**
-- Added `postgrest-projects` named volume but reverted to bind mount due to spawn script incompatibility
+**Status:** ✅ **Completed as part of Option B**
 
-**Problem:**
-- Named volume is defined but not used
-- Inconsistency between source and production configs
+**What was done:**
+- Named volume `postgrest-projects` now used correctly
+- Manager mounts volume RW, writes config files
+- Spawn script mounts volume by name (not host path)
+- No more permission issues
 
-**Long-Term Solution:**
-- Either remove named volume definition (if using bind mount approach)
-- Or implement Codex's solution (spawn script uses volume name)
-
-**Files to modify:**
-- `docker-compose.yml` - volumes section
+**Resolved in:** Option B implementation (13 Dec 2025)
 
 ---
 
@@ -121,9 +108,9 @@ Quick fixes applied in v0.1.x that need proper solutions in v0.2.0.
 | Priority | Item | Effort | Status |
 |----------|------|--------|--------|
 | ~~P1~~ | ~~JWT env vars in docker-compose.yml~~ | ~~Low~~ | ✅ Done v0.1.9 |
-| P1 | PostgREST config architecture (Codex solution) | Medium | Pending |
+| ~~P1~~ | ~~PostgREST config architecture (Option B)~~ | ~~Medium~~ | ✅ Done 13 Dec 2025 |
 | P2 | Remove entrypoint chown workaround | Low | Pending |
-| P2 | Clean up named volume definition | Low | Pending |
+| ~~P2~~ | ~~Clean up named volume definition~~ | ~~Low~~ | ✅ Done (Option B) |
 | P3 | Docker socket security | High | Pending |
 
 ---
