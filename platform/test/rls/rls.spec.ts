@@ -9,11 +9,14 @@
  *   TEST_DB_PASSWORD - Database password for the project authenticator role
  *   PROJECTS_DB_HOST - Database host (default: localhost)
  *   PROJECTS_DB_PORT - Database port (default: 5432)
+ *
+ * Optional:
+ *   KEEP_RLS_DB=1 - Skip cleanup after tests (for debugging)
  */
 
 import { Pool } from 'pg';
 import * as path from 'path';
-import { loadTestSuites } from './rls-test-runner';
+import { loadTestSuites, seedTestData, cleanupTestData } from './rls-test-runner';
 
 const testProjectId = process.env.TEST_PROJECT_ID || 'proj_test';
 const testDbPassword = process.env.TEST_DB_PASSWORD;
@@ -48,10 +51,15 @@ describeOrSkip('Row Level Security (RLS) Integration Tests', () => {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to connect to test database: ${message}`);
     }
+
+    // Seed test data before running tests
+    await seedTestData(pool);
   });
 
   afterAll(async () => {
     if (pool) {
+      // Cleanup test data (skipped if KEEP_RLS_DB=1)
+      await cleanupTestData(pool);
       await pool.end();
     }
   });
