@@ -12,5 +12,6 @@
 # 2. Add entry: "pgbouncer_auth" "SCRAM-SHA-256$4096:..."
 #
 # Project authenticator users (proj_xxx_authenticator) use auth_query automatically.
+# postgrest_manager_ro also uses auth_query (created in 04_postgrest_manager_role.sql)
 # DO NOT commit production passwords to version control!
 
