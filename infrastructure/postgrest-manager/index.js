@@ -1,14 +1,21 @@
 const express = require('express');
-const { exec } = require('child_process');
-const { promisify } = require('util');
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const { getProject, getSecret, closePool } = require('./lib/db');
 const { decrypt, validateMasterKey } = require('./lib/crypto');
 const { buildConfig } = require('./lib/config-builder');
+const {
+  containerExists,
+  isRunning,
+  sendSignal,
+  removeContainer,
+  createPostgrestContainer,
+  execInContainer,
+  waitForHealthy,
+  PGBOUNCER_CONTAINER,
+} = require('./lib/docker');
 
-const execAsync = promisify(exec);
 const app = express();
 const PORT = process.env.PORT || 9000;
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
@@ -178,19 +185,14 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
     }
 
     // 6. Check container state
-    const { stdout: existsCheck } = await execAsync(
-      `docker ps -a --format '{{.Names}}' | grep -q '^postgrest-${projectId}$' && echo 'exists' || echo 'not_exists'`
-    );
+    const containerName = `postgrest-${projectId}`;
+    const exists = await containerExists(containerName);
 
-    const containerExists = existsCheck.trim() === 'exists';
-
-    if (containerExists) {
+    if (exists) {
       // Check if running
-      const { stdout: runningCheck } = await execAsync(
-        `docker ps --format '{{.Names}}' | grep -q '^postgrest-${projectId}$' && echo 'running' || echo 'stopped'`
-      );
+      const running = await isRunning(containerName);
 
-      if (runningCheck.trim() === 'running') {
+      if (running) {
         if (!configChanged) {
           // Container running, config unchanged - no-op
           return res.status(200).json({
@@ -204,7 +206,7 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
         } else {
           // Container running, config changed - reload via SIGHUP
           console.log(`Config changed for running container ${projectId}, sending SIGHUP...`);
-          await execAsync(`docker kill --signal=SIGHUP postgrest-${projectId}`);
+          await sendSignal(containerName, 'SIGHUP');
           return res.status(200).json({
             projectId,
             containerId: `postgrest-${projectId}`,
@@ -217,19 +219,33 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
       } else {
         // Container stopped - remove and respawn for clean state
         console.log(`Removing stopped container for ${projectId}...`);
-        await execAsync(`docker rm postgrest-${projectId}`);
+        await removeContainer(containerName);
       }
     }
 
-    // 7. Add to PgBouncer (existing logic)
+    // 7. Add to PgBouncer using execInContainer
     console.log(`Adding ${projectId} database to PgBouncer...`);
     try {
-      const { stdout: pgbouncerOut, stderr: pgbouncerErr } = await execAsync(
-        `/scripts/pgbouncer-add-project.sh ${projectId}`,
-        { cwd: '/app' }
-      );
-      console.log(`PgBouncer database entry: ${pgbouncerOut}`);
-      if (pgbouncerErr) console.error(`PgBouncer stderr: ${pgbouncerErr}`);
+      const dbName = project.db_name;
+      const poolSize = 5;
+      const reservePool = 2;
+
+      const command = `
+        (
+          flock -x 200
+          TMPFILE=$(mktemp)
+          awk '/^\\[databases\\]/{print; print "${projectId} = host=postgres port=5432 dbname=${dbName} pool_size=${poolSize} reserve_pool=${reservePool}"; next}1' /etc/pgbouncer/pgbouncer.ini > "$TMPFILE"
+          cat "$TMPFILE" > /etc/pgbouncer/pgbouncer.ini
+          rm "$TMPFILE"
+        ) 200>/etc/pgbouncer/pgbouncer.ini.lock
+      `;
+
+      await execInContainer(PGBOUNCER_CONTAINER, command, { user: 'root' });
+
+      // Send SIGHUP to reload config
+      await execInContainer(PGBOUNCER_CONTAINER, 'kill -HUP 1', { user: 'root' });
+
+      console.log(`PgBouncer database entry added for ${projectId}`);
     } catch (pgbouncerError) {
       console.error(`PgBouncer database add failed for ${projectId}:`, pgbouncerError);
       return res.status(500).json({
@@ -238,19 +254,20 @@ app.post('/internal/postgrest/spawn', authenticate, validateProjectId, async (re
       });
     }
 
-    // 8. Spawn container
-    const { stdout, stderr } = await execAsync(
-      `/scripts/postgrest-spawn.sh ${projectId}`,
-      { cwd: '/app' }
-    );
+    // 8. Spawn container using dockerode
+    console.log(`Spawning PostgREST container for ${projectId}...`);
+    const result = await createPostgrestContainer(projectId, {
+      domain: process.env.DOMAIN,
+    });
 
-    console.log(`Spawn output: ${stdout}`);
-    if (stderr) console.error(`Spawn stderr: ${stderr}`);
+    console.log(`Container ${result.containerName} created, waiting for healthy status...`);
+    await waitForHealthy(containerName);
+    console.log(`Container ${result.containerName} is healthy`);
 
     res.status(201).json({
       projectId,
-      containerId: `postgrest-${projectId}`,
-      containerName: `postgrest-${projectId}`,
+      containerId: result.containerId,
+      containerName: result.containerName,
       port: 3000,
       status: 'running',
       configHash,
@@ -270,22 +287,17 @@ app.delete('/internal/postgrest/:projectId', authenticate, validateProjectId, as
 
   try {
     let containerStopped = false;
+    const containerName = `postgrest-${projectId}`;
 
     // Check if container exists and stop it if it does
-    const { stdout: existsCheck } = await execAsync(
-      `docker ps -a --format '{{.Names}}' | grep -q '^postgrest-${projectId}$' && echo 'exists' || echo 'not_exists'`
-    );
+    const exists = await containerExists(containerName);
 
-    if (existsCheck.trim() === 'exists') {
-      // Stop and remove container using stop script
+    if (exists) {
+      // Stop and remove container using dockerode
       try {
-        const { stdout, stderr } = await execAsync(
-          `/scripts/postgrest-stop.sh ${projectId}`,
-          { cwd: '/app' }
-        );
-
-        console.log(`Stop output: ${stdout}`);
-        if (stderr) console.error(`Stop stderr: ${stderr}`);
+        await stopContainer(containerName);
+        await removeContainer(containerName);
+        console.log(`Container ${containerName} stopped and removed`);
         containerStopped = true;
       } catch (stopError) {
         console.error(`Container stop failed (non-fatal): ${stopError.message}`);
@@ -299,12 +311,18 @@ app.delete('/internal/postgrest/:projectId', authenticate, validateProjectId, as
     // were added during project creation (before container spawn could fail)
     console.log(`Removing ${projectId} database from PgBouncer...`);
     try {
-      const { stdout: pgbouncerOut, stderr: pgbouncerErr } = await execAsync(
-        `/scripts/pgbouncer-remove-project.sh ${projectId}`,
-        { cwd: '/app' }
-      );
-      console.log(`PgBouncer database removal: ${pgbouncerOut}`);
-      if (pgbouncerErr) console.error(`PgBouncer database stderr: ${pgbouncerErr}`);
+      const command = `
+        (
+          flock -x 200
+          sed -i "/^${projectId} = /d" /etc/pgbouncer/pgbouncer.ini
+        ) 200>/etc/pgbouncer/pgbouncer.ini.lock
+      `;
+      await execInContainer(PGBOUNCER_CONTAINER, command, { user: 'root' });
+
+      // Send SIGHUP to reload config
+      await execInContainer(PGBOUNCER_CONTAINER, 'kill -HUP 1', { user: 'root' });
+
+      console.log(`PgBouncer database entry removed for ${projectId}`);
     } catch (pgbouncerError) {
       // Don't fail the destroy if PgBouncer removal fails
       console.error(`PgBouncer database removal failed (non-fatal): ${pgbouncerError.message}`);
@@ -314,12 +332,18 @@ app.delete('/internal/postgrest/:projectId', authenticate, validateProjectId, as
     const authenticatorUser = `${projectId}_authenticator`;
     console.log(`Removing ${authenticatorUser} from PgBouncer userlist...`);
     try {
-      const { stdout: userOut, stderr: userErr } = await execAsync(
-        `/scripts/pgbouncer-remove-user.sh "${authenticatorUser}"`,
-        { cwd: '/app' }
-      );
-      console.log(`PgBouncer user removal: ${userOut}`);
-      if (userErr) console.error(`PgBouncer user stderr: ${userErr}`);
+      const userCommand = `
+        (
+          flock -x 200
+          sed -i "/^\\"${authenticatorUser}\\" /d" /etc/pgbouncer/userlist.txt
+        ) 200>/etc/pgbouncer/userlist.txt.lock
+      `;
+      await execInContainer(PGBOUNCER_CONTAINER, userCommand, { user: 'root' });
+
+      // Send SIGHUP to reload user list
+      await execInContainer(PGBOUNCER_CONTAINER, 'kill -HUP 1', { user: 'root' });
+
+      console.log(`PgBouncer user ${authenticatorUser} removed`);
     } catch (userError) {
       // Don't fail the destroy if user removal fails
       console.error(`PgBouncer user removal failed (non-fatal): ${userError.message}`);
@@ -344,12 +368,12 @@ app.post('/internal/postgrest/:projectId/restart', authenticate, validateProject
   const { projectId } = req.params;
 
   try {
-    // Check if container is running
-    const { stdout: runningCheck } = await execAsync(
-      `docker ps --format '{{.Names}}' | grep -q '^postgrest-${projectId}$' && echo 'running' || echo 'not_running'`
-    );
+    const containerName = `postgrest-${projectId}`;
 
-    if (runningCheck.trim() === 'not_running') {
+    // Check if container is running
+    const running = await isRunning(containerName);
+
+    if (!running) {
       return res.status(404).json({
         error: 'not_found',
         message: 'Container not running'
@@ -357,13 +381,8 @@ app.post('/internal/postgrest/:projectId/restart', authenticate, validateProject
     }
 
     // Reload config using SIGHUP signal
-    const { stdout, stderr } = await execAsync(
-      `/scripts/postgrest-reload.sh ${projectId}`,
-      { cwd: '/app' }
-    );
-
-    console.log(`Reload output: ${stdout}`);
-    if (stderr) console.error(`Reload stderr: ${stderr}`);
+    await sendSignal(containerName, 'SIGHUP');
+    console.log(`SIGHUP sent to ${containerName}`);
 
     res.status(200).json({
       projectId,
@@ -382,21 +401,7 @@ app.post('/internal/postgrest/:projectId/restart', authenticate, validateProject
 // List running PostgREST containers
 app.get('/internal/postgrest', authenticate, async (req, res) => {
   try {
-    const { stdout } = await execAsync(
-      `docker ps --filter "name=^postgrest-" --format "{{.Names}}"`
-    );
-
-    const containers = stdout
-      .trim()
-      .split('\n')
-      .filter(name => name.startsWith('postgrest-'))
-      .map(name => ({
-        projectId: name.replace('postgrest-', ''),
-        containerName: name,
-        port: 3000,
-        status: 'running'
-      }));
-
+    const containers = await listPostgrestContainers();
     res.json({ containers });
   } catch (error) {
     console.error('List error:', error);

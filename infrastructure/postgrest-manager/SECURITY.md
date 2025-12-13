@@ -1,24 +1,26 @@
 # Security Considerations
 
-## Docker Socket Access
+## Docker Socket Security
 
-⚠️ **Security Notice:** This service requires Docker socket access and runs as root.
+**Current Implementation (v0.2.0+):**
+- Uses `docker-socket-proxy` to filter Docker API endpoints
+- Only allows: CONTAINERS, POST, EXEC, NETWORKS, IMAGES operations
+- All other operations disabled (VOLUMES, SYSTEM, SWARM, etc.)
+- postgrest-manager runs as non-root user (UID 1001)
+- No direct `/var/run/docker.sock` mount
+- Pure dockerode library (no shell scripts)
 
-### Current Architecture (v0.1.9)
-- Requires: `/var/run/docker.sock` mounted
-- Runs as: `root` user
-- Risk: Container escape vector if service is compromised
+**Before (v0.1.x):**
+- Direct docker.sock mount (full root access)
+- Shell script dependencies
+- Container breakout = full Docker control
 
-### Planned Improvements (v0.2.0)
-- Migrate to Docker HTTP API (remove docker-cli dependency)
-- Run as non-root user with Docker group permissions
-- Implement principle of least privilege
-
-### Mitigation for v0.1.9
-- Keep postgrest-manager on internal Docker network only
-- Do not expose to internet
-- Regular security updates
-- Monitor container logs for suspicious activity
+**Risk Reduction:**
+- Eliminated: Unrestricted Docker API access
+- Eliminated: Shell injection vulnerabilities
+- Eliminated: Root privilege escalation via docker commands
+- Added: API-level access control (socket-proxy)
+- Added: Least-privilege principle (non-root user)
 
 ## Authentication
 
