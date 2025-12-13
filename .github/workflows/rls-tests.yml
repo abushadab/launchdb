@@ -1,0 +1,133 @@
+name: RLS Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  rls-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: rls_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: platform/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./platform
+        run: npm ci
+
+      - name: Create database roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          # Create global roles required for RLS
+          psql -h localhost -U postgres -d rls_test -c "CREATE ROLE anon NOLOGIN;"
+          psql -h localhost -U postgres -d rls_test -c "CREATE ROLE authenticated NOLOGIN;"
+          psql -h localhost -U postgres -d rls_test -c "CREATE ROLE service_role NOLOGIN BYPASSRLS;"
+
+          # Create authenticator role (what tests connect as)
+          psql -h localhost -U postgres -d rls_test -c "CREATE ROLE rls_test_authenticator LOGIN PASSWORD 'postgres';"
+
+          # Grant role switching capability
+          psql -h localhost -U postgres -d rls_test -c "GRANT anon, authenticated, service_role TO rls_test_authenticator;"
+
+          # Grant CONNECT on database
+          psql -h localhost -U postgres -d rls_test -c "GRANT CONNECT ON DATABASE rls_test TO anon, authenticated, service_role;"
+
+          echo "✅ Created global roles and authenticator"
+
+      - name: Run project migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          # Run migrations in order
+          echo "Running 001_auth_schema.sql..."
+          psql -h localhost -U postgres -d rls_test -f platform/libs/sql/project_migrations/001_auth_schema.sql
+
+          echo "Running 002_storage_schema.sql..."
+          psql -h localhost -U postgres -d rls_test -f platform/libs/sql/project_migrations/002_storage_schema.sql
+
+          echo "Running 003_public_baseline.sql..."
+          psql -h localhost -U postgres -d rls_test -f platform/libs/sql/project_migrations/003_public_baseline.sql
+
+          echo "Running 004_pgbouncer_auth.sql..."
+          psql -h localhost -U postgres -d rls_test -f platform/libs/sql/project_migrations/004_pgbouncer_auth.sql
+
+          echo "✅ Migrations complete"
+
+      - name: Grant schema and table permissions
+        env:
+          PGPASSWORD: postgres
+        run: |
+          # Grant schema usage to all roles
+          psql -h localhost -U postgres -d rls_test -c "GRANT USAGE ON SCHEMA auth, storage, public TO anon, authenticated, service_role, rls_test_authenticator;"
+
+          # Grant table access for service_role (used by seed function)
+          psql -h localhost -U postgres -d rls_test -c "GRANT ALL ON ALL TABLES IN SCHEMA auth TO service_role;"
+          psql -h localhost -U postgres -d rls_test -c "GRANT ALL ON ALL TABLES IN SCHEMA storage TO service_role;"
+
+          echo "✅ Permissions granted"
+
+      - name: Verify database schema
+        env:
+          PGPASSWORD: postgres
+        run: |
+          echo "Checking schemas..."
+          psql -h localhost -U postgres -d rls_test -c "\dn"
+
+          echo "Checking auth tables..."
+          psql -h localhost -U postgres -d rls_test -c "\dt auth.*"
+
+          echo "Checking storage tables..."
+          psql -h localhost -U postgres -d rls_test -c "\dt storage.*"
+
+          echo "✅ Schema verification complete"
+
+      - name: Run RLS tests
+        working-directory: ./platform
+        env:
+          TEST_PROJECT_ID: rls_test
+          TEST_DB_PASSWORD: postgres
+          PROJECTS_DB_HOST: localhost
+          PROJECTS_DB_PORT: 5432
+        run: npm run test:rls
+
+      - name: Display logs on failure
+        if: failure()
+        env:
+          PGPASSWORD: postgres
+        run: |
+          echo "=== Database Roles ==="
+          psql -h localhost -U postgres -d rls_test -c "\du"
+
+          echo "=== Schemas ==="
+          psql -h localhost -U postgres -d rls_test -c "\dn"
+
+          echo "=== Auth Tables ==="
+          psql -h localhost -U postgres -d rls_test -c "\dt auth.*" || true
+
+          echo "=== Storage Tables ==="
+          psql -h localhost -U postgres -d rls_test -c "\dt storage.*" || true
